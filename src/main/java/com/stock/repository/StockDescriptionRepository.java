@@ -11,7 +11,4 @@ import java.util.List;
 
 @Repository
 public interface StockDescriptionRepository extends ReactiveCassandraRepository<StockDescriptionDetails, String> {
-
-    /*@Query("SELECT symbol FROM stock_description")
-    Flux<String> findDistinctSymbols();*/
 }

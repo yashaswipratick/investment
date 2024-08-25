@@ -30,7 +30,7 @@ public class StockDetailsIntegrator {
         return stockDetailsService.update(details);
     }
 
-    public Mono<Void> deleteStock(String symbol) {
-        return stockDetailsService.delete(symbol);
+    public Mono<Void> deleteStock(String key) {
+        return stockDetailsService.delete(key);
     }
 }
