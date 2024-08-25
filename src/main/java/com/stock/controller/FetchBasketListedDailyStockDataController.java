@@ -10,8 +10,8 @@ import reactor.core.publisher.Mono;
 
 @RestController
 @CrossOrigin(origins = "http://localhost:3000")
-@RequestMapping(FetchRealTimeStockData.ENDPOINT)
-public class FetchRealTimeStockData {
+@RequestMapping(FetchBasketListedDailyStockDataController.ENDPOINT)
+public class FetchBasketListedDailyStockDataController {
 
     public static final String ENDPOINT = "/stock/investment/v1.0";
 

@@ -45,7 +45,7 @@ public class StockFetcherScheduler {
             "ELECON", "GAIL", "HAL", "HMAAGRO", "IOC", "IRCTC", "IREDA", "NHPC", "NOVAAGRI", "ONGC", "PFC", "RECLTD", "RELIANCE",
             "RVNL", "SAIL", "SBIN", "TATATECH");*/
 
-    @Scheduled(fixedRate = 15000)
+    //@Scheduled(fixedRate = 15000)
     public void fetchStockDetailsList() {
         Flux.fromIterable(stockSymbol)
                 .flatMap(stockSymbol -> {

@@ -11,21 +11,17 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 @RestController
-@RequestMapping(FetchStockDetailController.ENDPOINT)
-public class FetchStockDetailController {
+@RequestMapping(FetchSymbolBasedStockDescriptionController.ENDPOINT)
+public class FetchSymbolBasedStockDescriptionController {
 
     public static final String ENDPOINT = "/stock/investment/v1.0";
 
     @Autowired
     private StockDescriptionIntegrator integrator;
 
-    /*@Autowired
-    private NSETools exchangeTools;*/
-
     @GetMapping(value = "/stockDescription", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Mono<StockDescriptionDetails>>> get() throws Exception {
 
         return Mono.justOrEmpty(ResponseEntity.ok(integrator.getStockDetailForProvidedSymbol("symbol")));
-        //return ResponseEntity.ok(new HashMap<>());
     }
 }
