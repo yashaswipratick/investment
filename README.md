@@ -1,8 +1,18 @@
 # investment
 
-Stock Market Analysis and P&L calculation
+<!-- TOC -->
+* [About The Project](#about-the-project)
+* [NSE URL to fetch data from NSE website](#nse-url-to-fetch-data-from-nse-website)
+* [Pre-requisites for the projects.](#pre-requisites-for-the-projects)
+* [Steps to run the project locally](#steps-to-run-the-project-locally)
+* [Swagger UI for API Docs](#swagger-ui-for-api-docs-)
+<!-- TOC -->
 
 # About The Project
+
+Stock Market Analysis and P&L calculation
+
+# NSE URL to fetch data from NSE website
 
 1. For Live Equity Data -> https://www.nseindia.com/market-data/live-equity-market?symbol=NIFTY%20500
 2. For Live Equity Data -> https://www.nseindia.com/market-data/live-equity-market?symbol=NIFTY%20200
@@ -26,6 +36,6 @@ Stock Market Analysis and P&L calculation
     2. Configure your cassandra details in application.yml
     3. Run Investment Application class.
 
-#Swagger URL
-    
-    [Swagger url](http://localhost:8080/swagger-ui.html)
+# Swagger UI for API Docs 
+   
+ [swagger-ui](http://localhost:8080/swagger-ui.html)
