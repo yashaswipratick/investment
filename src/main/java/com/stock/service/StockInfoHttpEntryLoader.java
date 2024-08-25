@@ -51,7 +51,7 @@ public class StockInfoHttpEntryLoader {
                 .retrieve()
                 .toBodilessEntity()
                 .flatMap(entity -> fetchApiData(client, buildURL(symbol)))
-                .doOnError(e -> System.out.println("symbol -> " + symbol + " Error: " + e.getMessage()));
+                .doOnError(e -> log.error("symbol -> {},  Error: {} ", symbol, e.getMessage()));
     }
     private Mono<StockInfoDetails> fetchApiData(WebClient client, String url) {
         // Print the raw response
@@ -78,7 +78,7 @@ public class StockInfoHttpEntryLoader {
                             .stockInfo(stockInfoDetailsMap)
                             .build();
                 })
-                .doOnNext(System.out::println)
+                .doOnNext(stockInfoDetails -> log.info("Fetched NSE stock details. details: {} ", stockInfoDetails))
                 .retryWhen(Retry.from(retrySignals ->
                         retrySignals
                                 .flatMap(retrySignal -> {
@@ -89,9 +89,9 @@ public class StockInfoHttpEntryLoader {
                                 })
                                 .delayElements(Duration.ofSeconds(2))// Delay between retries
                                 .take(3) // Retry up to 3 times
-                                .doOnNext(retrySignal -> System.out.println("Starting retry logic..."))
+                                .doOnNext(retrySignal -> log.info("Starting retry logic..."))
                 ))
-                .doOnError(e -> System.err.println("Failed to fetch API data for symbol: " + url + " after retries: " + e.getMessage()));
+                .doOnError(e -> log.error("Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()));
     }
 
     private static byte[] decompressGzip(byte[] compressed) {
@@ -112,7 +112,6 @@ public class StockInfoHttpEntryLoader {
         StockInfoDTO stockInfo = null;
         try {
             stockInfo = objectMapper.readValue(jsonResponse, StockInfoDTO.class);
-            //System.out.println("Inside converter... " + stockInfo);
         } catch (Exception e) {
             e.printStackTrace();
         }

@@ -50,7 +50,7 @@ public class StockDescriptionHttpEntryLoader {
                 .retrieve()
                 .toBodilessEntity()
                 .flatMapMany(entity -> fetchApiData(client, URL))
-                .doOnError(e -> System.out.println("Error: " + e.getMessage()));
+                .doOnError(e -> log.error("Error: {} ", e.getMessage()));
     }
     private Flux<StockDescriptionDetails> fetchApiData(WebClient client, String url) {
         // Print the raw response
@@ -62,7 +62,7 @@ public class StockDescriptionHttpEntryLoader {
                 .map(StockDescriptionHttpEntryLoader::decompressGzip)
                 .map(String::new)
                 .flatMapMany(csvData -> Flux.fromIterable(convertCSVToList(csvData)))
-                .doOnNext(System.out::println);
+                .doOnNext(stockDescriptionDetails -> log.info("Stock Description details. result: {} ", stockDescriptionDetails));
     }
 
     private static byte[] decompressGzip(byte[] compressed) {
@@ -82,7 +82,6 @@ public class StockDescriptionHttpEntryLoader {
         StockDescriptionDetails stockInfo = null;
         try {
             stockInfo = objectMapper.readValue(jsonResponse, StockDescriptionDetails.class);
-            //System.out.println("Inside converter... " + stockInfo);
         } catch (Exception e) {
             e.printStackTrace();
         }

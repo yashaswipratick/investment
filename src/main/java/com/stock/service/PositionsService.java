@@ -12,6 +12,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -61,5 +62,12 @@ public class PositionsService {
         return repository.findAll()
                 .filter(positions -> positions.getIsActivePosition().equalsIgnoreCase(Boolean.TRUE.toString()))
                 .collect(Collectors.toList());
+    }
+
+    public Mono<Set<String>> getAllPositionStockSymbol() {
+        return getAllActivePositions()
+                .flatMap(positions -> Flux.fromIterable(positions)
+                        .flatMap(position -> Flux.fromIterable(position.getPositionsStockInfoDetails().keySet()))
+                        .collect(Collectors.toSet()));
     }
 }

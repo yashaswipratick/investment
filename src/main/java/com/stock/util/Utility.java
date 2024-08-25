@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.opencsv.CSVReader;
 import com.stock.dto.StockDescriptionDetails;
 import com.stock.dto.StockInfoDetails;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.io.StringReader;
@@ -12,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 public class Utility {
 
     public static List<StockDescriptionDetails> convertCSVToList(String csvdata) {
@@ -47,7 +50,7 @@ public class Utility {
                     resultList.add(stockDescription);
                 }
             }
-            System.out.println(resultList);
+            log.info("converted stock description data from CSV to List. results: {} ", resultList);
             return resultList;
         } catch (Exception e) {
             e.printStackTrace();
@@ -64,7 +67,6 @@ public class Utility {
         StockInfoDetails stockInfoDetails = null;
         try {
             stockInfoDetails = objectMapper.readValue(jsonResponse, StockInfoDetails.class);
-            //System.out.println("Inside converter... " + stockInfoDetails);
         } catch (Exception e) {
             e.printStackTrace();
         }

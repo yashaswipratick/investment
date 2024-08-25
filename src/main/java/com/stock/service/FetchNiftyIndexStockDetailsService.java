@@ -3,6 +3,7 @@ package com.stock.service;
 import com.stock.dto.IndexStockDetails;
 import com.stock.dto.NiftyIndexStockDetails;
 import com.stock.repository.NiftyIndexStockDetailsRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -21,6 +22,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class FetchNiftyIndexStockDetailsService {
 
@@ -47,10 +49,7 @@ public class FetchNiftyIndexStockDetailsService {
 
         return Flux.fromIterable(tableBody)
                 .flatMap(tableBodyData -> {
-                    System.out.println("change % for stock " + tableBodyData.children().get(0).select("span > a").text() + " -> " + tableBodyData.children().get(3).text());
-                    if (tableBodyData.children().get(0).select("span > a").text().equalsIgnoreCase("NTPC")) {
-                        System.out.println("NTPC");
-                    }
+                    log.info("change % for stock {}  -> {} ", tableBodyData.children().get(0).select("span > a").text(), tableBodyData.children().get(3).text());
                     IndexStockDetails data = IndexStockDetails.builder()
                             .companyName(tableBodyData.children().get(0).select("span > a").text())
                             .industry(tableBodyData.children().get(1).text())
