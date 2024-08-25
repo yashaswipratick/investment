@@ -2,9 +2,7 @@ package com.stock.service;
 
 import com.stock.dto.Positions;
 import com.stock.dto.PositionsStockInfo;
-import com.stock.dto.StockInfoDTO;
 import com.stock.dto.key.PositionsKey;
-import com.stock.repository.PositionsRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -15,8 +13,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
