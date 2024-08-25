@@ -54,7 +54,7 @@ public class StockFetcherScheduler {
                 .block();
     }
 
-    //@Scheduled(fixedRate = 15000)
+    @Scheduled(fixedRate = 15000)
     public void fetchStockDetailsList() {
         Flux.fromIterable(stockSymbolCache)
                 .flatMap(stockSymbol -> {
