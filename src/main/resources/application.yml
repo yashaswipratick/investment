@@ -1,0 +1,50 @@
+logging:
+  level.com.yellowsquash.crm: DEBUG
+
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: always
+  compression:
+    enabled: true
+    min-response-size: 2048
+
+spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  data:
+    cassandra:
+      contact-points:
+        - 127.0.0.1
+      port: 9042
+      local-datacenter: datacenter1
+      keyspace-name: realtime_stock_data
+      username: admin
+      password: admin
+      schema-action: create-if-not-exists
+      connection:
+        connect-timeout: 5000ms # Set the connect timeout to 5000 milliseconds
+        read-timeout: 10000ms   # Set the read timeout to 10000 milliseconds
+        init-query-timeout: 10000ms # Set the initial query timeout
+      request:
+        timeout: 10000ms # Set the request timeout to 10000 milliseconds
+      pool:
+        idle-timeout: 10000ms  # Set the idle timeout for connections in the pool
+        heartbeat-interval: 30000ms # Interval to check connections in the pool
+#      request:
+#        timeout: 10000ms
+#      connection:
+#        connect-timeout: 5000ms
+#        init-query-timeout: 5000ms
+
+#springdoc:
+#  swagger-ui:
+#    doc-expansion: none
+
+springfox:
+  documentation:
+    swagger:
+      v2:
+        path: /api-docs
