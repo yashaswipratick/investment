@@ -2,4 +2,4 @@
 
 Stock Market Analysis and P&L calculation
 
-# About The Projectd
+# About The Project
