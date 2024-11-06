@@ -68,6 +68,10 @@ public class StockDescriptionService {
         return repository.saveAll(descriptionDetails);
     }
 
+    public Flux<StockDescriptionDetails> getAll() {
+        return repository.findAll();
+    }
+
     public Mono<List<String>> findDistinctSymbols() {
         return repository.findAll()
                 .flatMap(stockDescriptionDetails -> Mono.justOrEmpty(stockDescriptionDetails.getSymbol()))

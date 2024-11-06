@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+import java.util.Map;
+
 @RestController
 @RequestMapping(FetchSymbolBasedStockDescriptionController.ENDPOINT)
 public class FetchSymbolBasedStockDescriptionController {
@@ -20,8 +23,8 @@ public class FetchSymbolBasedStockDescriptionController {
     private StockDescriptionIntegrator integrator;
 
     @GetMapping(value = "/stockDescription", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Mono<StockDescriptionDetails>>> get() throws Exception {
+    public Mono<ResponseEntity<Mono<Map<String, List<StockDescriptionDetails>>>>> get() throws Exception {
 
-        return Mono.justOrEmpty(ResponseEntity.ok(integrator.getStockDetailForProvidedSymbol("symbol")));
+        return Mono.justOrEmpty(ResponseEntity.ok(integrator.getStockDetailForProvidedSymbol()));
     }
 }
