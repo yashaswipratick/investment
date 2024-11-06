@@ -10,6 +10,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -22,13 +23,15 @@ public class StockDescriptionIntegrator {
     @Autowired
     private StockDescriptionHttpEntryLoader entryLoader;
 
-    public Mono<StockDescriptionDetails> getStockDetailForProvidedSymbol(String symbol) {
-        return stockDetailsService.get(symbol)
+    public Mono<Map<String, List<StockDescriptionDetails>>> getStockDetailForProvidedSymbol() {
+        return stockDetailsService.getAll()
+                .collect(Collectors.groupingBy(StockDescriptionDetails::getSymbol))
+                .flatMap(Mono::justOrEmpty)
                 .switchIfEmpty(Mono.defer(() -> entryLoader.getStockDetails()
                         .collect(Collectors.toList())
                         .flatMap(detail -> stockDetailsService.saveAll(detail)
                                 .collect(Collectors.groupingBy(StockDescriptionDetails::getSymbol))
-                                .flatMap(stockDescriptionDetailsMap -> Mono.justOrEmpty(stockDescriptionDetailsMap.get(symbol).get(0))))));
+                                .flatMap(Mono::justOrEmpty))));
     }
 
     public Flux<StockDescriptionDetails> upsert() {

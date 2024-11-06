@@ -32,8 +32,8 @@ public class StockDetailsService {
                         .doOnNext(detailsLog ->
                                 log.info("Stock info details saved successfully. key: {}", detailsLog.getKey()))))
                 .flatMap(details1 -> {
-                    if (Objects.nonNull(details1)) {
-                        MapUtils.emptyIfNull(details1.getStockInfo()).putAll(details.getStockInfo());
+                    if (Objects.nonNull(details1) && MapUtils.isNotEmpty(details1.getStockInfo())) {
+                        details1.getStockInfo().putAll(details.getStockInfo());
                         details1.setCreatedDate(LocalDateTime.now());
                         return Mono.justOrEmpty(details1);
                     }
