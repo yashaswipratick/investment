@@ -10,10 +10,6 @@ server:
     enabled: true
     min-response-size: 2048
 
-spring:
-  ai:
-    openai:
-      api-key: ""
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
