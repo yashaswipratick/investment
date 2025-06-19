@@ -12,9 +12,6 @@ import java.util.List;
 public class CurlCommandGenerator {
 
     @Autowired
-    private NseClientConfig nseClientConfig;
-
-    @Autowired
     private ReadCookie cookie;
 
     String COOKIE_BACKUP = "";
