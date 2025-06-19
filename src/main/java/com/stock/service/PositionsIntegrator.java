@@ -4,7 +4,6 @@ import com.stock.dto.Positions;
 import com.stock.dto.PositionsStockInfo;
 import com.stock.dto.key.PositionsKey;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -14,7 +13,6 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -27,9 +25,6 @@ public class PositionsIntegrator {
         if (entity == null) {
             log.error("positions details are null. skipping save...");
             return Mono.empty();
-        }
-        if (StringUtils.isEmpty(entity.getKey().getBasketId())) {
-            entity.getKey().setBasketId(UUID.randomUUID().toString());
         }
         return service.save(entity);
     }
@@ -63,7 +58,6 @@ public class PositionsIntegrator {
                 .flatMap(map -> Mono.justOrEmpty(Positions.builder()
                                 .key(PositionsKey.builder()
                                         .key(LocalDate.now().minusDays(2).toString())
-                                        .basketId(UUID.randomUUID().toString())
                                         .build())
                                 .positionsStockInfoDetails(map)
                                 .isActivePosition(Boolean.TRUE.toString())

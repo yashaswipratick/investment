@@ -14,9 +14,8 @@ CREATE TYPE positions_stock_info (
 
 CREATE TABLE positions (
     key text,
-    basket_id text,
     positions_stock_info_details map<text, frozen<positions_stock_info>>,
     is_active_position text,
     created_date timestamp,
-    PRIMARY KEY ((key, basket_id))
+    PRIMARY KEY ((key))
 );

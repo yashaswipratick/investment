@@ -11,13 +11,16 @@ server:
     min-response-size: 2048
 
 spring:
+  ai:
+    openai:
+      api-key: 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
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
   data:
     cassandra:
       contact-points:
-        - 172.17.0.2
+        - 172.18.0.2
       port: 9042
       local-datacenter: datacenter1
       keyspace-name: realtime_stock_data
@@ -48,3 +51,19 @@ springfox:
     swagger:
       v2:
         path: /api-docs
+
+nse:
+  client:
+    headers:
+      accept: "*/*"
+      accept-language: "en-GB,en-US;q=0.9,en;q=0.8"
+      priority: "u=1, i"
+      referer: "https://www.nseindia.com/get-quotes/equity?symbol=INFY"
+      sec-ch-ua: "\"Google Chrome\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\""
+      sec-ch-ua-mobile: "?0"
+      sec-ch-ua-platform: "\"macOS\""
+      sec-fetch-dest: "empty"
+      sec-fetch-mode: "cors"
+      sec-fetch-site: "same-origin"
+      user-agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+      Cookie: "defaultLang=en; _ga=GA1.1.2062070402.1718882723; _ga_WM2NSQKJEK=GS1.1.1744529412.23.1.1744529415.0.0.0; AKA_A2=A; nsit=AcHTF_7WG5Bg5WjT-BiN-pEx; bm_mi=C7CBD90DE1B956B09F130C501749EDA8~YAAQjdcLF/lMe32XAQAAOWtqiRzAkK/yYdw5XPT1H8l+ckX9BUVXRV9OFZX42Xxh8TrEZQ57xuVSKsAPoJUDM+HrP9GnvG2yHaAZuhYIanitMBebGEqIhBqzSdXV2PRspN3hvWf9gS0GWB8ccekjQUau7toaO4wXvgOSEqQ7HmRw/OzIJSgzWnU2nDQM6NYmVRnKrHkZhXJEAOpvlmN6OZS3Mo+Zwqc2Mh/DH6SJ3QAzqexHl0gdRVFlaMsv9RGmL5wO71p9p680axisCUv682vwGBt0AxEVjKPf0p2WR0KX6uSB2AopZKDU5b0=~1; bm_sv=C54165B8C52EBF88CEF7D8D361B0AEC3~YAAQjdcLF1BPe32XAQAAt3RqiRwpEaPzOEInkeyO1Bk86eb7+rPDhn1L6Ztyl7TLj3Zn4rghZ4q/clEwu/HlkM1/R8RuwBATB6u7FX4WWaoy0DCfgeJfPNV8itsoQH/ekgk8ljoER9Yi2gI0jJ9jmBl2vbDcgQ68q47Y3a3AD+jDFt0LcviJ05Q62FueGpGa44NBGgPJaNNN32zgw9cCCC2DcYn8mCajv9dVUwfDtuhqXrR07vLsfGFwEGfzyTe5P2lp~1; ak_bmsc=BDDE62D1E391FF57E8025F7080BC38C4~000000000000000000000000000000~YAAQjdcLFz9be32XAQAA4KhqiRzAmpkfmLu7A2cVMa7wdmIs9XcNnTe5+fVUOV1Gi7MKxAwxh+erdjz4lvjr8/0SFAj3jjlznilK+8q9VcFFfRfcns/+c7AJ1DDPZHZqC26XOM6eB+FHDPVdHCw5Ymn9Ad+WtVO2Qbfi3Cvz2qHDhGvw+4HAjqL1b9yFvw9ULaf5cmCR260dqVMm3uoDgUzNy2nY7LXdywdW2rwuVMi2QLwu5JhD4Er03CZ+tGq06fS5WntO0/yxhQCdnjdhUw/kANPsv2K4X8JXHE2FIRyQEaJhUSvqAWMsQ+ygeWwlx1N8h/aOMjjHWz2w243cGLN1FNfqZt3FW4HTVSwDKq2rPjYzz5LvHuPIzgBNjPFFp3Ptjf2EnlDPeUW2hsibkRhpFPkkhRpXi50aQiqGMFOe93dbSGT95pAiezmn8ZzfSnFyBv94IjbZ2SA+Kem8y3+Y+gZHYFpYkuFQ3RYCKULI7MkiAAaw22aZMtEJtJ5EIgCCL3Fnpt+Z; nseappid=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcGkubnNlIiwiYXVkIjoiYXBpLm5zZSIsImlhdCI6MTc1MDM1ODQ2MywiZXhwIjoxNzUwMzY1NjYzfQ.Osow3eHi2Ok-b0xN4ex4Ep82YD4xO5BcNLKusuvHMxI; bm_sz=B1E15E438B1D3B31F5911A5A52843706~YAAQREYDFy7X63iXAQAAK5R+iRxUUeL/3L98ibTpwh1pLTgCPluGXHHnuB6SqutjqkaBFvbjALOSny/tEY7TM2tr0biLOzziYFB5td9YhZGqFISduXpITR4Q1Bv/rkqJGPnsK5V05tE3xLt/MF24xVMw2d3XAZOSkJiTk1+1zURrbb5E49tdxEQiAGOAODSmlRUEqzG5W59KNx3qhXN8tPrN0Yq4V/U0+KSE0brXd0OTGsJFitnd5Gb7j4bF5xsN91UYiAj01/M18GrZS67rOUCAOGLAKJ6EsLLbfyOZ2UEmeCc6gmAAdb4//qxJ0m7SxoksrI5t/uCY39pe2dUgugCBObdu9FOkCJ9Exuwtts6tVdWALBeNZ9ASCp5rjQk0LBUD8bsjNSxPLCNC0RIOnhSMNKnrmjAsc8ya/NAUvizeA9ThzKKyxNEhrF4=~3160376~3422264; _ga_87M7PJ3R97=GS2.1.s1750357088$o49$g1$t1750358463$j14$l0$h0; _abck=8826A8AFDA4B259CEB537CB6CCF185E2~0~YAAQREYDFy/X63iXAQAACpV+iQ6RwpC3MD8tk/TvmQ+vWtUTZTMYNlVyQ7xG8WfA8eD4BSW0jG5sPz5T43ME5rj0fisnMDyaa6bJ1ogufyVHLSivVJOyIm+EC+hu2QH2avo4Fewrmq68+yzm0HvxKywf73HdTdl72VZsCzlaMeOuXguErFV3sv1c1eYjSl9K7VQZL74rkSgyX+p2ySl9qf7oIVbIXHpQ8UYB0NmCvTvRcJJYy4IHvJ9NYgSjKmZxW/mMeBNuLhGfsZPI+sVkr8+fWLmjpEUnmGznKbnF24eG5OH4ymPcAQsAlE2tPvO/5Wl2AUavdyR9jHGZAayeoHn1wwS1rmxmilwnT6/RiqQr6mmafDyHcSHM/yfYUfApxFMsswj++SH0GpIP9EDR8b2cDEbQIhFJsoJD54VXif7YRmZfNtkqQbtt/zd5X8DoiXZEYXMHiD83XP2GRv0j0GZJ0uNzpumPcbgOa5S+69YDWrF/W1HXvLOAoQKQhGmL7DXyvnGBVbg2fhuoXiC44iRW4bGlpoExmW5ChKFEQF0uhN6IKiAvKf/hP6wBrUFiLqVmMq+9+8iV/xJHJ83E0bO1lEuntQX4fUyJqqD6YDB6GsjZ0pjCUABKPxLkw0PABuHXvIEvdgZpWhoKluYZan/q3OAx1lSNodg=~-1~-1~-1"
