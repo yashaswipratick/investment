@@ -38,7 +38,6 @@ public class PositionsService {
 
         return get(PositionsKey.builder()
                 .key(entity.getKey().getKey())
-                .basketId(entity.getKey().getBasketId())
                 .build())
                 .switchIfEmpty(Mono.empty())
                 .flatMap(positionDetails -> {

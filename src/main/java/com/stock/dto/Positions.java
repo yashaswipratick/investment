@@ -21,7 +21,7 @@ public class Positions {
     private PositionsKey key;
 
     @Column("positions_stock_info_details")
-    Map<String, PositionsStockInfo> positionsStockInfoDetails;
+    Map<String, PositionsStockInfo> positionsStockInfoDetails; // Key is date on which a particular stock is purchased.
 
     @Column("is_active_position")
     private String isActivePosition;

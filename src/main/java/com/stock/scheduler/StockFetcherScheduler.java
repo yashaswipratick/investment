@@ -8,8 +8,10 @@ import com.stock.service.PositionsService;
 import com.stock.service.StockDescriptionService;
 import com.stock.service.StockDetailsService;
 import com.stock.service.StockInfoHttpEntryLoader;
+import com.stock.util.Test;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.MapUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -19,6 +21,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -48,13 +51,28 @@ public class StockFetcherScheduler {
         service.getAllPositionStockSymbol()
                 .flatMap(stockSymbols -> {
                     stockSymbolCache.addAll(stockSymbols);
+                    if (stockSymbolCache.isEmpty()) {
+                        return Mono.empty();
+                    }
                     return Mono.justOrEmpty(stockSymbols);
                 })
+                .switchIfEmpty(Mono.defer(() -> {
+                    try {
+                        stockSymbolCache.addAll(Test.readJsonFile());
+                        return Mono.justOrEmpty(stockSymbolCache);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }))
                 .doOnNext(stockSymbols -> log.info("Active positioned stock symbol loaded to fetch the data from NSE. symbols: {}", stockSymbols))
                 .block();
     }
 
-    @Scheduled(fixedRate = 15000)
+    public void fetchNiftyFiftyIndexStockSymbol() throws IOException {
+        stockSymbolCache.addAll(Test.readJsonFile());
+    }
+
+    @Scheduled(fixedRate = 120000)
     public void fetchStockDetailsList() {
         Flux.fromIterable(stockSymbolCache)
                 .flatMap(stockSymbol -> {
@@ -71,6 +89,7 @@ public class StockFetcherScheduler {
                     log.info("Stock details fetched. details: {} ", details);
                     log.info("Stock details fetched Keys. keys: {} ", details.keySet());
                 })
+                .filter(MapUtils::isNotEmpty)
                 .flatMap(details -> stockInfoService.save(StockInfoDetails.builder()
                         .key(LocalDate.now().toString())
                         .stockInfo(details)

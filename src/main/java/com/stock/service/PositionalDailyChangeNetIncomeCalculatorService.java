@@ -111,7 +111,6 @@ public class PositionalDailyChangeNetIncomeCalculatorService {
         double totalPnlPercentageOnTotalInvestedAmountPerStock = ((totalPnlOnTotalInvestedAmountPerStock / totalInvestmentPerStock) * 100);
         return Mono.justOrEmpty(Pair.of(instrumentName, PositionalDailyNetIncomeInfo.builder()
                 .positionDate(positions.getKey().getKey())
-                .basketId(positions.getKey().getBasketId())
                 .instrument(instrumentName)
                 .quantity(positionDetails.getQuantity())
                 .averagePricePerStock(positionDetails.getAveragePricePerStock())

@@ -1,5 +1,6 @@
 package com.stock.service;
 
+import com.stock.dto.StockInfoDTO;
 import com.stock.dto.StockInfoDetails;
 import com.stock.repository.StockInfoRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,7 @@ import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -60,6 +62,7 @@ public class StockDetailsService {
 
     public Mono<StockInfoDetails> get(String key) {
         return repository.findById(key)
+                .switchIfEmpty(Mono.defer(Mono::empty))
                 .doOnNext(details -> log.info("stock info Details fetched for date. key: {} ", key));
     }
 
@@ -90,5 +93,12 @@ public class StockDetailsService {
 
     public Flux<StockInfoDetails> saveAll(List<StockInfoDetails> details) {
         return repository.saveAll(details);
+    }
+
+    public Mono<StockInfoDTO> getByStockSymbol(String stockSymbol) {
+        return repository.findById(LocalDate.now().toString())
+                .flatMap(stockInfoDetails ->Mono.justOrEmpty(stockInfoDetails.getStockInfo().get(stockSymbol)))
+                .switchIfEmpty(Mono.defer(Mono::empty))
+                .doOnNext(details -> log.info("stock info Details fetched for date. key: {} ", details));
     }
 }
