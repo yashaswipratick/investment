@@ -13,7 +13,7 @@ server:
 spring:
   ai:
     openai:
-      api-key: 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
+      api-key: ""
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
