@@ -81,7 +81,7 @@ public class CurlCommandGenerator {
     private String getCookie() {
         // Fetch cookie from config or an injected file reader class
         String cookieDetails = cookie.readCookie();
-        if (COOKIE_BACKUP.isEmpty() || (StringUtils.isNotEmpty(cookieDetails) && cookieDetails.length() > 500)) {
+        if (!StringUtils.endsWithIgnoreCase(cookieDetails, "; AKA_A2=A") || COOKIE_BACKUP.isEmpty() || (StringUtils.isNotEmpty(cookieDetails) && cookieDetails.length() > 500)) {
             COOKIE_BACKUP = cookie.readCookie();
         }
         return COOKIE_BACKUP;
