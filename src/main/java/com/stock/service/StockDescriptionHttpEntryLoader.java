@@ -2,11 +2,11 @@ package com.stock.service;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stock.curl.CurlCommandGenerator;
 import com.stock.dto.StockDescriptionDetails;
-import com.stock.dto.StockInfoDTO;
-import com.stock.dto.StockInfoDetails;
-import com.stock.util.Utility;
+import io.netty.resolver.DefaultAddressResolverGroup;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
@@ -20,7 +20,6 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
@@ -30,29 +29,33 @@ import static com.stock.util.Utility.convertCSVToList;
 @Service
 public class StockDescriptionHttpEntryLoader {
 
-    private static final String BASE_URL = "https://www.nseindia.com/";
-    private static final String URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv";
-    private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36";
-    private static final String ACCEPT_LANGUAGE = "en,gu;q=0.9,hi;q=0.8";
-    private static final String ACCEPT_ENCODING = "gzip, deflate, br";
+    @Autowired
+    private CurlCommandGenerator curlCommandGenerator;
 
-    public Flux<StockDescriptionDetails> getStockDetails() {
+    private static final String URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv";
+    private static final String BASE_URL = "https://www.nseindia.com/";
+    private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
+    private static final String ACCEPT_LANGUAGE = "en-GB,en-US;q=0.9,en;q=0.8";
+    private static final String ACCEPT_ENCODING = "gzip, deflate";
+
+    public Mono<List<StockDescriptionDetails>> getStockDetails() {
         WebClient client = WebClient.builder()
                 .baseUrl(BASE_URL)
                 .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
                 .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, ACCEPT_LANGUAGE)
                 .defaultHeader(HttpHeaders.ACCEPT_ENCODING, ACCEPT_ENCODING)
-                .clientConnector(new ReactorClientHttpConnector(HttpClient.create().followRedirect(true)))
+                .defaultHeader(HttpHeaders.COOKIE, curlCommandGenerator.getCookie())
+                .clientConnector(new ReactorClientHttpConnector(HttpClient.create().resolver(DefaultAddressResolverGroup.INSTANCE).followRedirect(true)))
                 .build();
 
         // Establish session by making a GET request to the base URL
         return client.get()
                 .retrieve()
                 .toBodilessEntity()
-                .flatMapMany(entity -> fetchApiData(client, URL))
+                .flatMap(entity -> fetchApiData(client, URL))
                 .doOnError(e -> log.error("Error: {} ", e.getMessage()));
     }
-    private Flux<StockDescriptionDetails> fetchApiData(WebClient client, String url) {
+    private Mono<List<StockDescriptionDetails>> fetchApiData(WebClient client, String url) {
         // Print the raw response
         return client.get()
                 .uri(url)
@@ -62,6 +65,7 @@ public class StockDescriptionHttpEntryLoader {
                 .map(StockDescriptionHttpEntryLoader::decompressGzip)
                 .map(String::new)
                 .flatMapMany(csvData -> Flux.fromIterable(convertCSVToList(csvData)))
+                .collectList()
                 .doOnNext(stockDescriptionDetails -> log.info("Stock Description details. result: {} ", stockDescriptionDetails));
     }
 

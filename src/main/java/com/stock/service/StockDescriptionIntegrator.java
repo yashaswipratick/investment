@@ -1,15 +1,11 @@
 package com.stock.service;
 
 import com.stock.dto.StockDescriptionDetails;
-import com.stock.dto.StockInfoDetails;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -23,24 +19,14 @@ public class StockDescriptionIntegrator {
     @Autowired
     private StockDescriptionHttpEntryLoader entryLoader;
 
-    public Mono<Map<String, List<StockDescriptionDetails>>> getStockDetailForProvidedSymbol() {
-        return stockDetailsService.getAll()
-                .collect(Collectors.groupingBy(StockDescriptionDetails::getSymbol))
-                .flatMap(Mono::justOrEmpty)
-                .switchIfEmpty(Mono.defer(() -> entryLoader.getStockDetails()
-                        .collect(Collectors.toList())
-                        .flatMap(detail -> stockDetailsService.saveAll(detail)
-                                .collect(Collectors.groupingBy(StockDescriptionDetails::getSymbol))
-                                .flatMap(Mono::justOrEmpty))));
-    }
-
-    public Flux<StockDescriptionDetails> upsert() {
+    public Mono<Map<String, StockDescriptionDetails>> getStockDetailForProvidedSymbol() {
         return entryLoader.getStockDetails()
-                .flatMap(stockInfoDetails -> stockDetailsService.save(stockInfoDetails))
-                .switchIfEmpty(Flux.empty());
-    }
-
-    public Mono<Void> deleteStock(String symbol) {
-        return stockDetailsService.delete(symbol);
+                .map(stockList -> stockList.stream()
+                        .collect(Collectors.toMap(
+                                StockDescriptionDetails::getSymbol,    // key = symbol
+                                description -> description,            // value = object
+                                (existing, replacement) -> replacement // resolve duplicates
+                        ))
+                );
     }
 }
