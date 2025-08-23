@@ -72,7 +72,7 @@ public class StockFetcherScheduler {
         stockSymbolCache.addAll(Test.readJsonFile());
     }
 
-    @Scheduled(fixedRate = 120000)
+    //@Scheduled(fixedRate = 120000)
     public void fetchStockDetailsList() {
         Flux.fromIterable(stockSymbolCache)
                 .flatMap(stockSymbol -> {

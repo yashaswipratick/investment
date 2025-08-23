@@ -22,6 +22,12 @@ public class CurlCommandGenerator {
         return extractJsonFromResponse(jsonResponse);
     }
 
+    public String generateCurlCommandStockHistory(String url, String stockSymbol) {
+        String curlCommand = buildStockHistoryCurlCommand(url, stockSymbol);
+        String jsonResponse = executeCurlCommand(curlCommand);
+        return extractJsonFromResponse(jsonResponse);
+    }
+
     private String executeCurlCommand(String curlCommand) {
         StringBuilder output = new StringBuilder();
 
@@ -78,7 +84,24 @@ public class CurlCommandGenerator {
                 "--header 'Cookie: "+getCookie()+"'";
     }
 
-    private String getCookie() {
+    private String buildStockHistoryCurlCommand(String url, String stockSymbol) {
+
+            return "curl --location --globoff '" + url + "' \\\n" +
+                    "--header 'accept: */*' \\\n" +
+                    "--header 'accept-language: en-GB,en-US;q=0.9,en;q=0.8' \\\n" +
+                    "--header 'priority: u=1, i' \\\n" +
+                    "--header 'referer: https://www.nseindia.com/get-quotes/equity?symbol=" + stockSymbol + "' \\\n" +
+                    "--header 'sec-ch-ua: \"Google Chrome\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"' \\\n" +
+                    "--header 'sec-ch-ua-mobile: ?0' \\\n" +
+                    "--header 'sec-ch-ua-platform: \"macOS\"' \\\n" +
+                    "--header 'sec-fetch-dest: empty' \\\n" +
+                    "--header 'sec-fetch-mode: cors' \\\n" +
+                    "--header 'sec-fetch-site: same-origin' \\\n" +
+                    "--header 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36' \\\n" +
+                    "--header 'Cookie: " + getCookie() + "'";
+    }
+
+    public String getCookie() {
         // Fetch cookie from config or an injected file reader class
         String cookieDetails = cookie.readCookie();
         if (!StringUtils.endsWithIgnoreCase(cookieDetails, "; AKA_A2=A") || COOKIE_BACKUP.isEmpty() || (StringUtils.isNotEmpty(cookieDetails) && cookieDetails.length() > 500)) {
