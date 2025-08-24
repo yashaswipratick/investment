@@ -21,10 +21,12 @@ import reactor.util.retry.Retry;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
@@ -50,6 +52,7 @@ public class StockInfoHttpEntryLoader {
                 .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
                 .defaultHeader(HttpHeaders.ACCEPT_LANGUAGE, ACCEPT_LANGUAGE)
                 .defaultHeader(HttpHeaders.ACCEPT_ENCODING, ACCEPT_ENCODING)
+                .defaultHeader(HttpHeaders.COOKIE, curlCommandGenerator.getCookie())
                 .clientConnector(new ReactorClientHttpConnector(HttpClient.create().resolver(DefaultAddressResolverGroup.INSTANCE).followRedirect(true)))
                 .build();
 
@@ -62,18 +65,20 @@ public class StockInfoHttpEntryLoader {
                     log.info("⚠️ WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
 
                     String response = curlCommandGenerator.generateCurlCommand(buildURL(symbol));
-                    log.info("json fetched for url: {}, json: {} ", buildURL(symbol), response);
+                    log.info("On Error Resume json fetched for url: {}, json: {} ", buildURL(symbol), response);
                     if (response != null && response.startsWith("{")) {
                         try {
                             StockInfoDTO stockInfoDto = StockInfoHttpEntryLoader.convertResponseToDto(response);
-                            HashMap<String, StockInfoDTO> map = new HashMap<>();
-                            map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
-                            return Mono.just(StockInfoDetails.builder()
-                                    .key(LocalDate.now().toString())
-                                    .stockInfo(map)
-                                    .build());
+                            if (stockInfoDto != null) {
+                                HashMap<String, StockInfoDTO> map = new HashMap<>();
+                                map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
+                                return Mono.just(StockInfoDetails.builder()
+                                        .key(LocalDate.now().toString())
+                                        .stockInfo(map)
+                                        .build());
+                            }
                         } catch (Exception e) {
-                            log.error("Failed to parse JSON from curl: {}", e.getMessage());
+                            log.error("Failed to parse JSON from curl: {}, error: {}", buildURL(symbol), e.getMessage());
                         }
                     }
                     return Mono.empty();
@@ -83,10 +88,18 @@ public class StockInfoHttpEntryLoader {
 
                     String response = curlCommandGenerator.generateCurlCommand(buildURL(symbol));
 
-                    log.info("json fetched for url: {}, json: {} ", buildURL(symbol), response);
+                    log.info("Switch if empty json fetched for url: {}, json: {} ", buildURL(symbol), response);
                     if (response != null && response.startsWith("{")) {
                         try {
                             StockInfoDTO stockInfoDto = StockInfoHttpEntryLoader.convertResponseToDto(response);
+                            if (stockInfoDto != null) {
+                                HashMap<String, StockInfoDTO> map = new HashMap<>();
+                                map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
+                                return Mono.just(StockInfoDetails.builder()
+                                        .key(LocalDate.now().toString())
+                                        .stockInfo(map)
+                                        .build());
+                            }
                             HashMap<String, StockInfoDTO> map = new HashMap<>();
                             map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
                             return Mono.just(StockInfoDetails.builder()
@@ -94,7 +107,7 @@ public class StockInfoHttpEntryLoader {
                                     .stockInfo(map)
                                     .build());
                         } catch (Exception e) {
-                            log.error("Failed to parse JSON from curl: {}", e.getMessage());
+                            log.error("Failed to parse JSON from curl: {}, error: {}", buildURL(symbol), e.getMessage());
                         }
                     }
                     return Mono.empty();
@@ -109,7 +122,7 @@ public class StockInfoHttpEntryLoader {
         Predicate<Throwable> isRetryableError = throwable ->
                 throwable instanceof WebClientResponseException &&
                         (((WebClientResponseException) throwable).getStatusCode().value() == 401 ||
-                                ((WebClientResponseException) throwable).getStatusCode().value() == 403 );
+                                ((WebClientResponseException) throwable).getStatusCode().value() == 403);
 
         return client.get()
                 .uri(url)
@@ -132,17 +145,20 @@ public class StockInfoHttpEntryLoader {
                     log.info("⚠️ WebClient failed after retries. Trying curl fallback... url: {}", url);
 
                     String response = curlCommandGenerator.generateCurlCommand(url);
+                    log.info("Switch if empty fetch api json fetched for url: {}, json: {} ", url, response);
                     if (response != null && response.startsWith("{")) {
                         try {
                             StockInfoDTO stockInfoDto = StockInfoHttpEntryLoader.convertResponseToDto(response);
-                            HashMap<String, StockInfoDTO> map = new HashMap<>();
-                            map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
-                            return Mono.just(StockInfoDetails.builder()
-                                    .key(LocalDate.now().toString())
-                                    .stockInfo(map)
-                                    .build());
+                            if (stockInfoDto != null) {
+                                HashMap<String, StockInfoDTO> map = new HashMap<>();
+                                map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
+                                return Mono.just(StockInfoDetails.builder()
+                                        .key(LocalDate.now().toString())
+                                        .stockInfo(map)
+                                        .build());
+                            }
                         } catch (Exception e) {
-                            log.error("Failed to parse JSON from curl: {}", e.getMessage());
+                            log.error("Failed to parse JSON from curl: {}, error: {}", url, e.getMessage());
                         }
                     }
                     return Mono.empty();
@@ -156,18 +172,20 @@ public class StockInfoHttpEntryLoader {
                                     log.info("⚠️ WebClient failed after retries. Trying curl fallback... url: {}", url);
 
                                     String response = curlCommandGenerator.generateCurlCommand(url);
-                                    log.info("json fetched for url: {}, json: {} ", url, response);
+                                    log.info("Switch if empty fetch api on error retry json fetched for url: {}, json: {} ", url, response);
                                     if (response != null && response.startsWith("{")) {
                                         try {
                                             StockInfoDTO stockInfoDto = StockInfoHttpEntryLoader.convertResponseToDto(response);
-                                            HashMap<String, StockInfoDTO> map = new HashMap<>();
-                                            map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
-                                            return Mono.just(StockInfoDetails.builder()
-                                                    .key(LocalDate.now().toString())
-                                                    .stockInfo(map)
-                                                    .build());
+                                            if (stockInfoDto != null) {
+                                                HashMap<String, StockInfoDTO> map = new HashMap<>();
+                                                map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
+                                                return Mono.just(StockInfoDetails.builder()
+                                                        .key(LocalDate.now().toString())
+                                                        .stockInfo(map)
+                                                        .build());
+                                            }
                                         } catch (Exception e) {
-                                            log.error("Failed to parse JSON from curl: {}", e.getMessage());
+                                            log.error("Failed to parse JSON from curl: {}, error: {}", url, e.getMessage());
                                         }
                                     }
                                     return Mono.empty();
@@ -181,17 +199,21 @@ public class StockInfoHttpEntryLoader {
                     log.info("⚠️ WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
 
                     String response = curlCommandGenerator.generateCurlCommand(url);
+                    log.info("Switch if empty fetch api on error retry-1 json fetched for url: {}, json: {} ", url, response);
+
                     if (response != null && response.startsWith("{")) {
                         try {
                             StockInfoDTO stockInfoDto = StockInfoHttpEntryLoader.convertResponseToDto(response);
-                            HashMap<String, StockInfoDTO> map = new HashMap<>();
-                            map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
-                            return Mono.just(StockInfoDetails.builder()
-                                    .key(LocalDate.now().toString())
-                                    .stockInfo(map)
-                                    .build());
+                            if (stockInfoDto != null) {
+                                HashMap<String, StockInfoDTO> map = new HashMap<>();
+                                map.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
+                                return Mono.just(StockInfoDetails.builder()
+                                        .key(LocalDate.now().toString())
+                                        .stockInfo(map)
+                                        .build());
+                            }
                         } catch (Exception e) {
-                            log.error("Failed to parse JSON from curl: {}", e.getMessage());
+                            log.error("Failed to parse JSON from curl: {}, error: {}", url, e.getMessage());
                         }
                     }
                     return Mono.empty();
@@ -210,16 +232,18 @@ public class StockInfoHttpEntryLoader {
     private static StockInfoDTO convertResponseToDto(String jsonResponse) {
         //String jsonResponse = "{\"info\":{\"symbol\":\"RELIANCE\",\"companyName\":\"Reliance Industries Limited\",\"industry\":\"REFINERIES\",\"activeSeries\":[\"EQ\"],\"debtSeries\":[],\"isFNOSec\":true,\"isCASec\":false,\"isSLBSec\":true,\"isDebtSec\":false,\"isSuspended\":false,\"tempSuspendedSeries\":[],\"isETFSec\":false,\"isDelisted\":false,\"isin\":\"INE002A01018\",\"isMunicipalBond\":false,\"isTop10\":false,\"identifier\":\"RELIANCEEQN\"},\"metadata\":{\"series\":\"EQ\",\"symbol\":\"RELIANCE\",\"isin\":\"INE002A01018\",\"status\":\"Listed\",\"listingDate\":\"29-Nov-1995\",\"industry\":\"Refineries & Marketing\",\"lastUpdateTime\":\"26-Jun-2024 10:56:52\",\"pdSectorPe\":25.02,\"pdSymbolPe\":25.02,\"pdSectorInd\":\"NIFTY 500                                         \"},\"securityInfo\":{\"boardStatus\":\"Main\",\"tradingStatus\":\"Active\",\"tradingSegment\":\"Normal Market\",\"sessionNo\":\"-\",\"slb\":\"Yes\",\"classOfShare\":\"Equity\",\"derivatives\":\"Yes\",\"surveillance\":{\"surv\":null,\"desc\":null},\"faceValue\":10,\"issuedSize\":6765813926},\"sddDetails\":{\"SDDAuditor\":\"-\",\"SDDStatus\":\"-\"},\"priceInfo\":{\"lastPrice\":2947.7,\"change\":39.399999999999636,\"pChange\":1.3547433208403408,\"previousClose\":2908.3,\"open\":2892.1,\"close\":0,\"vwap\":2925.97,\"lowerCP\":\"2617.50\",\"upperCP\":\"3199.10\",\"pPriceBand\":\"No Band\",\"basePrice\":2908.3,\"intraDayHighLow\":{\"min\":2890.25,\"max\":2949.9,\"value\":2947.7},\"weekHighLow\":{\"min\":2220.3,\"minDate\":\"26-Oct-2023\",\"max\":3029,\"maxDate\":\"03-Jun-2024\",\"value\":2947.7},\"iNavValue\":null,\"checkINAV\":false},\"industryInfo\":{\"macro\":\"Energy\",\"sector\":\"Oil Gas & Consumable Fuels\",\"industry\":\"Petroleum Products\",\"basicIndustry\":\"Refineries & Marketing\"},\"preOpenMarket\":{\"preopen\":[{\"price\":2617.5,\"buyQty\":0,\"sellQty\":25},{\"price\":2618,\"buyQty\":0,\"sellQty\":15},{\"price\":2680,\"buyQty\":0,\"sellQty\":66},{\"price\":2762.9,\"buyQty\":0,\"sellQty\":5106},{\"price\":2892.1,\"buyQty\":0,\"sellQty\":0,\"iep\":true},{\"price\":3053.7,\"buyQty\":3578,\"sellQty\":0},{\"price\":3080,\"buyQty\":3,\"sellQty\":0},{\"price\":3100,\"buyQty\":1250,\"sellQty\":0},{\"price\":3199.1,\"buyQty\":401,\"sellQty\":0}],\"ato\":{\"buy\":6022,\"sell\":12452},\"IEP\":2892.1,\"totalTradedVolume\":119958,\"finalPrice\":2892.1,\"finalQuantity\":119958,\"lastUpdateTime\":\"26-Jun-2024 09:07:47\",\"totalBuyQuantity\":63088,\"totalSellQuantity\":131612,\"atoBuyQty\":6022,\"atoSellQty\":12452,\"Change\":-16.200000000000273,\"perChange\":-0.5570264415638095,\"prevClose\":2908.3}}"; // Replace with your actual JSON string
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-        StockInfoDTO stockInfo = null;
         try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+            StockInfoDTO stockInfo = null;
             stockInfo = objectMapper.readValue(jsonResponse, StockInfoDTO.class);
+
+            return stockInfo;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("json reponse not proper. jsonResponse: {} ", jsonResponse);
+            return null;
         }
-        return stockInfo;
     }
 
     private String buildURL(String symbol) {

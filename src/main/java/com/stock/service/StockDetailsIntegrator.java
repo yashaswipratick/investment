@@ -19,7 +19,8 @@ public class StockDetailsIntegrator {
     private StockInfoHttpEntryLoader entryLoader;
 
     public Mono<StockInfoDetails> getStockDetailForProvidedSymbol(String key) {
-        return stockDetailsService.get(key);
+        return stockDetailsService.get(key)
+                .switchIfEmpty(Mono.defer(() -> entryLoader.getStockDetails(key)));
     }
 
     public Mono<StockInfoDetails> update(StockInfoDetails details) {
