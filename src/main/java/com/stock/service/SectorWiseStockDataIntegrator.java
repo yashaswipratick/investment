@@ -103,6 +103,11 @@ public class SectorWiseStockDataIntegrator {
 
     public Mono<String> getAllStocks() {
 
+        return sectorWiseStockDataService.getAllStock();
+    }
+
+    public Mono<List<SectorWiseStockDetails>> getAll() {
+
         return sectorWiseStockDataService.getAll();
     }
 }

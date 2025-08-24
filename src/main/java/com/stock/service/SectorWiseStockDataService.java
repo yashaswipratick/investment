@@ -46,7 +46,7 @@ public class SectorWiseStockDataService {
         return repository.findById(SectorWiseStockKey.builder().key(key).build());
     }
 
-    public Mono<String> getAll() {
+    public Mono<String> getAllStock() {
         return repository.findAll()
                 .flatMap(details -> Flux.fromIterable(details.getStocks())) // flatten List<String> to Flux<String>
                 .collect(Collectors.toSet()) // collect unique stock symbols
@@ -60,5 +60,10 @@ public class SectorWiseStockDataService {
         return repository.findAll()
                 .flatMap(details -> Flux.fromIterable(details.getStocks())) // flatten List<String> to Flux<String>
                 .collect(Collectors.toList()); // collect unique stock symbols;
+    }
+
+    public Mono<List<SectorWiseStockDetails>> getAll() {
+        return repository.findAll()
+                .collect(Collectors.toList());
     }
 }

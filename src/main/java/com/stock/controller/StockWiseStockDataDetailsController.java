@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+
 @RestController
 @CrossOrigin(origins = "http://localhost:3000")
 @RequestMapping(StockWiseStockDataDetailsController.ENDPOINT)
@@ -29,5 +31,10 @@ public class StockWiseStockDataDetailsController {
     @GetMapping(value = "/sectorWiseStockDetailsList", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Mono<String>>> getAllStocks() throws Exception {
         return Mono.justOrEmpty(ResponseEntity.ok(integrator.getAllStocks()));
+    }
+
+    @GetMapping(value = "/sectorAndStockList", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Mono<List<SectorWiseStockDetails>>>> getAllSectorsAndStocks() throws Exception {
+        return Mono.justOrEmpty(ResponseEntity.ok(integrator.getAll()));
     }
 }
