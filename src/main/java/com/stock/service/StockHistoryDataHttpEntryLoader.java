@@ -1,16 +1,12 @@
 package com.stock.service;
 
-import com.datastax.oss.driver.shaded.guava.common.collect.Maps;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stock.curl.CurlCommandGenerator;
-import com.stock.dto.*;
+import com.stock.dto.StockHistory;
+import com.stock.dto.StockHistoryDetails;
+import com.stock.dto.StockHistoryRequest;
 import com.stock.dto.key.StockHistoryKey;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.resolver.DefaultAddressResolverGroup;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.json.JSONArray;
@@ -32,6 +28,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -62,12 +59,14 @@ public class StockHistoryDataHttpEntryLoader {
                 .clientConnector(new ReactorClientHttpConnector(HttpClient.create().resolver(DefaultAddressResolverGroup.INSTANCE).followRedirect(true)))
                 .build();
 
+        return fetchApiDataList(client, buildURL(request), request.getStockSymbol())
+                .doOnError(e -> log.error("symbol -> {},  Error: {} ", request, e.getMessage()));
         // Establish session by making a GET request to the base URL
-        return client.get()
+        /*return client.get()
                 .retrieve()
                 .toBodilessEntity()
-                .flatMap(entity -> fetchApiDataList(client, buildURL(request), request.getStockSymbol())
-                .onErrorResume(error -> {
+                .flatMap(entity -> fetchApiDataList(client, buildURL(request), request.getStockSymbol())*/
+                /*.onErrorResume(error -> {
                     log.info("⚠️ Stock history WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
 
                     String response = curlCommandGenerator.generateCurlCommandStockHistory(buildURL(request), request.getStockSymbol());
@@ -76,12 +75,12 @@ public class StockHistoryDataHttpEntryLoader {
                         try {
                             List<StockHistoryDetails> stockHistoryDetails = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
                             return Mono.justOrEmpty(stockHistoryDetails);
-                            /*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
+                            *//*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
                                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                             return Mono.justOrEmpty(StockHistory.builder()
                                     .key(StockHistoryKey.builder().key(stockHistoryDetails.stream().findFirst().get().getStockName()).build())
                                     .stockHistoryDetails(stockHistoryDetailsMap)
-                                    .build());*/
+                                    .build());*//*
                         } catch (Exception e) {
                             log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                         }
@@ -98,19 +97,19 @@ public class StockHistoryDataHttpEntryLoader {
                         try {
                             List<StockHistoryDetails> stockHistoryDetails = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
                             return Mono.justOrEmpty(stockHistoryDetails);
-                            /*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
+                            *//*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
                                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                             return Mono.justOrEmpty(StockHistory.builder()
                                     .key(StockHistoryKey.builder().key(request.getStockSymbol()).build())
                                     .stockHistoryDetails(stockHistoryDetailsMap)
-                                    .build());*/
+                                    .build());*//*
                         } catch (Exception e) {
                             log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                         }
                     }
                     return Mono.empty();
-                }))
-                .doOnError(e -> log.error("symbol -> {},  Error: {} ", request, e.getMessage())));
+                }))*/
+                //.doOnError(e -> log.error("symbol -> {},  Error: {} ", request, e.getMessage())));
     }
 
     public Mono<StockHistory> getStockHistoryDetails(StockHistoryRequest request) {
@@ -134,9 +133,9 @@ public class StockHistoryDataHttpEntryLoader {
         return client.get()
                 .retrieve()
                 .toBodilessEntity()
-                .flatMap(entity -> fetchApiData(client, buildURL(request), request.getStockSymbol())
+                .flatMap(entity -> fetchApiData(client, buildURLForCSVResp(request), request.getStockSymbol())
                         .onErrorResume(error -> {
-                            log.info("⚠️ Stock history WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
+                            /*log.info("⚠️ Stock history WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
 
                             String response = curlCommandGenerator.generateCurlCommandStockHistory(buildURL(request), request.getStockSymbol());
                             log.info("Stock History json fetched for url: {}, json: {} ", buildURL(request), response);
@@ -157,11 +156,11 @@ public class StockHistoryDataHttpEntryLoader {
                                 } catch (Exception e) {
                                     log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                                 }
-                            }
+                            }*/
                             return Mono.empty();
                         })
                         .switchIfEmpty(Mono.defer(() -> {
-                            log.info("⚠️Stock History WebClient failed after retries. Trying curl fallback... url: {}", buildURL(request));
+                            /*log.info("⚠️Stock History WebClient failed after retries. Trying curl fallback... url: {}", buildURL(request));
 
                             String response = curlCommandGenerator.generateCurlCommandStockHistory(buildURL(request), request.getStockSymbol());
 
@@ -183,7 +182,7 @@ public class StockHistoryDataHttpEntryLoader {
                                 } catch (Exception e) {
                                     log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                                 }
-                            }
+                            }*/
                             return Mono.empty();
                         }))
                         .doOnError(e -> log.error("symbol -> {},  Error: {} ", request, e.getMessage())));
@@ -205,7 +204,7 @@ public class StockHistoryDataHttpEntryLoader {
                 .bodyToMono(byte[].class)
                 .map(StockHistoryDataHttpEntryLoader::decompressGzip)
                 .map(String::new)
-                .map(StockHistoryDataHttpEntryLoader::convertResponseToDto)
+                .map(s -> convertCSVResponseToDto(s, stockSymbol))
                 .flatMap(stockHistoryDetails -> Flux.fromIterable(stockHistoryDetails)
                         .flatMap(details -> Mono.justOrEmpty(Pair.of(details.getHistoryDate(), details)))
                         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
@@ -215,7 +214,7 @@ public class StockHistoryDataHttpEntryLoader {
                                 .build())))
                 .doOnNext(stockHistoryDetails -> log.info(" Fetched Stock History NSE details. details: {} ", stockHistoryDetails))
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
+                    /*log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
 
                     String response = curlCommandGenerator.generateCurlCommandStockHistory(url, stockSymbol);
                     if (response != null && response.startsWith("{")) {
@@ -235,7 +234,7 @@ public class StockHistoryDataHttpEntryLoader {
                         } catch (Exception e) {
                             log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                         }
-                    }
+                    }*/
                     return Mono.empty();
                 }))
                 .retryWhen(Retry.from(retrySignals ->
@@ -244,23 +243,23 @@ public class StockHistoryDataHttpEntryLoader {
                                     if (isRetryableError.test(retrySignal.failure())) {
                                         return Mono.just(retrySignal);
                                     }
-                                    log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
+                                    /*log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
 
                                     String response = curlCommandGenerator.generateCurlCommandStockHistory(url, stockSymbol);
                                     if (response != null && response.startsWith("{")) {
                                         try {
                                             List<StockHistoryDetails> stockHistoryDetails = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
                                             return Mono.justOrEmpty(stockHistoryDetails);
-                                            /*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
+                                            *//*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
                                                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                                             return Mono.justOrEmpty(StockHistory.builder()
                                                     .key(StockHistoryKey.builder().key(stockHistoryDetails.stream().findFirst().get().getStockName()).build())
                                                     .stockHistoryDetails(stockHistoryDetailsMap)
-                                                    .build());*/
+                                                    .build());*//*
                                         } catch (Exception e) {
                                             log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                                         }
-                                    }
+                                    }*/
                                     return Mono.empty();
                                 })
                                 .delayElements(Duration.ofSeconds(2))// Delay between retries
@@ -269,7 +268,7 @@ public class StockHistoryDataHttpEntryLoader {
                 ))
                 .doOnError(e -> log.error("Stock History Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()))
                 .onErrorResume(error -> {
-                    log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
+                    /*log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
 
                     String response = curlCommandGenerator.generateCurlCommandStockHistory(url, stockSymbol);
                     if (response != null && response.startsWith("{")) {
@@ -289,7 +288,7 @@ public class StockHistoryDataHttpEntryLoader {
                         } catch (Exception e) {
                             log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                         }
-                    }
+                    }*/
                     return Mono.empty();
                 });
     }
@@ -310,7 +309,11 @@ public class StockHistoryDataHttpEntryLoader {
                 .bodyToMono(byte[].class)
                 .map(StockHistoryDataHttpEntryLoader::decompressGzip)
                 .map(String::new)
-                .map(StockHistoryDataHttpEntryLoader::convertResponseToDto)
+                .map(response -> {
+                    List<StockHistoryDetails> details = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
+                    log.info("Fetched {} records from NSE", details.size());
+                    return details;
+                })
                 /*.flatMap(stockHistoryDetails -> Flux.fromIterable(stockHistoryDetails)
                         .flatMap(details -> Mono.justOrEmpty(Pair.of(details.getHistoryDate(), details)))
                         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
@@ -320,23 +323,23 @@ public class StockHistoryDataHttpEntryLoader {
                                 .build())))*/
                 .doOnNext(stockHistoryDetails -> log.info(" Fetched Stock History NSE details. details: {} ", stockHistoryDetails))
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
-
-                    String response = curlCommandGenerator.generateCurlCommandStockHistory(url, stockSymbol);
-                    if (response != null && response.startsWith("{")) {
-                        try {
-                            List<StockHistoryDetails> stockHistoryDetails = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
-                            return Mono.justOrEmpty(stockHistoryDetails);
-                            /*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
-                                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                            return Mono.justOrEmpty(StockHistory.builder()
-                                    .key(StockHistoryKey.builder().key(stockHistoryDetails.stream().findFirst().get().getStockName()).build())
-                                    .stockHistoryDetails(stockHistoryDetailsMap)
-                                    .build());*/
-                        } catch (Exception e) {
-                            log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
-                        }
-                    }
+//                    log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
+//
+//                    String response = curlCommandGenerator.generateCurlCommandStockHistory(url, stockSymbol);
+//                    if (response != null && response.startsWith("{")) {
+//                        try {
+//                            List<StockHistoryDetails> stockHistoryDetails = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
+//                            return Mono.justOrEmpty(stockHistoryDetails);
+//                            /*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
+//                                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+//                            return Mono.justOrEmpty(StockHistory.builder()
+//                                    .key(StockHistoryKey.builder().key(stockHistoryDetails.stream().findFirst().get().getStockName()).build())
+//                                    .stockHistoryDetails(stockHistoryDetailsMap)
+//                                    .build());*/
+//                        } catch (Exception e) {
+//                            log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
+//                        }
+//                    }
                     return Mono.empty();
                 }))
                 .retryWhen(Retry.from(retrySignals ->
@@ -345,23 +348,23 @@ public class StockHistoryDataHttpEntryLoader {
                                     if (isRetryableError.test(retrySignal.failure())) {
                                         return Mono.just(retrySignal);
                                     }
-                                    log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
+                                    /*log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... url: {}", url);
 
                                     String response = curlCommandGenerator.generateCurlCommandStockHistory(url, stockSymbol);
                                     if (response != null && response.startsWith("{")) {
                                         try {
                                             List<StockHistoryDetails> stockHistoryDetails = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
                                             return Mono.justOrEmpty(stockHistoryDetails);
-                                            /*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
+                                            *//*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
                                                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                                             return Mono.justOrEmpty(StockHistory.builder()
                                                     .key(StockHistoryKey.builder().key(stockHistoryDetails.stream().findFirst().get().getStockName()).build())
                                                     .stockHistoryDetails(stockHistoryDetailsMap)
-                                                    .build());*/
+                                                    .build());*//*
                                         } catch (Exception e) {
                                             log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                                         }
-                                    }
+                                    }*/
                                     return Mono.empty();
                                 })
                                 .delayElements(Duration.ofSeconds(2))// Delay between retries
@@ -370,23 +373,23 @@ public class StockHistoryDataHttpEntryLoader {
                 ))
                 .doOnError(e -> log.error("Stock History Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()))
                 .onErrorResume(error -> {
-                    log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
+                    /*log.info("⚠️ Stock History WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
 
                     String response = curlCommandGenerator.generateCurlCommandStockHistory(url, stockSymbol);
                     if (response != null && response.startsWith("{")) {
                         try {
                             List<StockHistoryDetails> stockHistoryDetails = StockHistoryDataHttpEntryLoader.convertResponseToDto(response);
                             return Mono.justOrEmpty(stockHistoryDetails);
-                            /*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
+                            *//*Map<LocalDate, StockHistoryDetails> stockHistoryDetailsMap = stockHistoryDetails.stream().map(details -> Pair.of(Pair.of(details.getHistoryDate(), details)))
                                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                             return Mono.justOrEmpty(StockHistory.builder()
                                     .key(StockHistoryKey.builder().key(stockHistoryDetails.stream().findFirst().get().getStockName()).build())
                                     .stockHistoryDetails(stockHistoryDetailsMap)
-                                    .build());*/
+                                    .build());*//*
                         } catch (Exception e) {
                             log.error("Stock History Failed to parse JSON from curl: {}", e.getMessage());
                         }
-                    }
+                    }*/
                     return Mono.empty();
                 });
     }
@@ -497,4 +500,103 @@ public class StockHistoryDataHttpEntryLoader {
         log.error("Stock history build url. url: {}", url);
         return url;
     }
+
+    private String buildURLForCSVResp(StockHistoryRequest request) {
+        StringBuilder URL = new StringBuilder("https://www.nseindia.com/api/historical/cm/equity?");
+        String url = URL
+                .append("symbol")
+                .append("=")
+                .append(request.getStockSymbol())
+                .append("&")
+                .append("series")
+                .append("=")
+                .append("[")
+                .append("\"")
+                .append(request.getSeries())
+                .append("\"")
+                .append("]")
+                .append("&")
+                .append("from")
+                .append("=")
+                .append(request.getFrom())
+                .append("&")
+                .append("to")
+                .append("=")
+                .append(request.getTo())
+                .append("&")
+                .append("csv")
+                .append("=")
+                .append("true")
+                .toString();
+        log.error("Stock history build url. url: {}", url);
+        return url;
+    }
+
+
+    private static List<StockHistoryDetails> convertCSVResponseToDto(String csvResponse, String stockName) {
+        List<StockHistoryDetails> stockHistoryDetails = new ArrayList<>();
+        try {
+            log.info("CSV response: {}", csvResponse);
+
+            // Split lines
+            String[] lines = csvResponse.split("\n");
+
+            if (lines.length <= 1) {
+                log.warn("No stock history data found in CSV response");
+                return stockHistoryDetails;
+            }
+
+            // First line is header, skip it
+            for (int i = 1; i < lines.length; i++) {
+                String line = lines[i].trim();
+                if (line.isEmpty()) continue;
+
+                // Remove quotes and split by comma
+                //String[] values = line.replaceAll("\"", "").split("\",\"", -1);
+                String[] values = line.split("\",\"", -1);
+
+
+                // Defensive: ensure correct number of columns
+                if (values.length < 14) {
+                    log.warn("Skipping invalid CSV line: {}", line);
+                    continue;
+                }
+
+                // Map CSV → DTO
+                StockHistoryDetails details = StockHistoryDetails.builder()
+                        .historyDate(LocalDate.parse(values[0].replaceAll("\"", "").trim(), DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH)))
+                        .series(values[1].trim())
+                        .open(parseDouble(values[2]))
+                        .high(parseDouble(values[3]))
+                        .low(parseDouble(values[4]))
+                        .pevClose(parseDouble(values[5]))
+                        .ltp(parseDouble(values[6]))
+                        .close(parseDouble(values[7]))
+                        .vwap(parseDouble(values[8]))
+                        .fiftyTwoWeekHigh(parseDouble(values[9]))
+                        .fiftyTwoWeekLow(parseDouble(values[10]))
+                        .volume(values[11].trim())
+                        .value(values[12].trim())
+                        .totalTrades(values[13].replaceAll("\"", "").trim())
+                        .stockName(stockName)  // NSE CSV doesn’t provide symbol, you can inject from method param
+                        .isin("NA")            // CSV doesn’t have ISIN
+                        .build();
+
+                stockHistoryDetails.add(details);
+            }
+        } catch (Exception e) {
+            log.error("Error while converting CSV stock history to DTO list", e);
+        }
+        return stockHistoryDetails;
+    }
+
+    // Helper to safely parse double
+    private static Double parseDouble(String value) {
+        try {
+            return Double.parseDouble(value.replace(",", "").trim());
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
 }

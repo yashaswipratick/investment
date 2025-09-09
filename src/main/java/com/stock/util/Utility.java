@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.io.StringReader;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -83,5 +85,22 @@ public class Utility {
             e.printStackTrace();
             return null;
         }
+    }
+
+    public static String dateFormatterCurrentDay() {
+        LocalDate today = LocalDate.now();
+
+        // Define formatter for dd-MM-yyyy
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+
+        // Format date
+        return today.format(formatter);
+    }
+
+    public static String getDateMinusDays(LocalDate baseDate, int days) {
+        LocalDate resultDate = baseDate.minusDays(days);
+        // Format result (optional, you can return LocalDate directly)
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
+        return resultDate.format(formatter);
     }
 }

@@ -3,6 +3,7 @@ package com.stock.service;
 import com.stock.dto.SectorWiseStockDetails;
 import com.stock.dto.key.SectorWiseStockKey;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -109,5 +110,35 @@ public class SectorWiseStockDataIntegrator {
     public Mono<List<SectorWiseStockDetails>> getAll() {
 
         return sectorWiseStockDataService.getAll();
+    }
+
+    public Mono<String> getAllStock() {
+        return sectorWiseStockDataService.getAllStock();
+    }
+
+    public Mono<List<String>> getAllSet() {
+        return sectorWiseStockDataService.getAllSet();
+    }
+
+    public Mono<SectorWiseStockDetails> save(SectorWiseStockDetails details) {
+        return sectorWiseStockDataService.save(details);
+    }
+
+    public Mono<Map<String, List<String>>> getSectorWiseStock() {
+
+        return sectorWiseStockDataService.getAll()
+                .flatMapMany(Flux::fromIterable)
+                .collect(Collectors.toMap(
+                        s -> s.getKey().getKey(),
+                        SectorWiseStockDetails::getStocks,
+                        (existing, replacement) -> {
+                            existing.addAll(replacement); // merge stock lists
+                            return existing;
+                        }
+                ));
+    }
+
+    public Mono<List<String>> getAllSector() {
+        return sectorWiseStockDataService.getAllSectors();
     }
 }

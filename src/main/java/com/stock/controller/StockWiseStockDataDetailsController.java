@@ -37,4 +37,9 @@ public class StockWiseStockDataDetailsController {
     public Mono<ResponseEntity<Mono<List<SectorWiseStockDetails>>>> getAllSectorsAndStocks() throws Exception {
         return Mono.justOrEmpty(ResponseEntity.ok(integrator.getAll()));
     }
+
+    @GetMapping(value = "/sectors", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Mono<List<String>>>> getAllSectors() throws Exception {
+        return Mono.justOrEmpty(ResponseEntity.ok(integrator.getAllSector()));
+    }
 }

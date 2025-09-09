@@ -57,8 +57,11 @@ public class SectorWiseStockFetcherScheduler {
                             .filter(s -> !s.contains("ARE&M"))
                             .filter(s -> !s.contains("M&M"))
                             .filter(s -> !s.contains("GMRP&UI"))
-                            .filter(s -> !s.contains("J&KBANK"))
-                            .filter(s -> !s.contains("&"))*/
+                            .filter(s -> !s.contains("J&KBANK"))*/
+                            .filter(s -> !s.contains("HOVS"))
+                            .filter(s -> !s.contains("SWANENERGY"))
+                            .filter(s -> !s.contains("GEPIL"))
+                            //.filter(s -> !s.contains("&"))
                             .map(s -> Pair.of(s, true))
                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                     stockSymbolCache.putAll(stockSymbol);
@@ -71,17 +74,20 @@ public class SectorWiseStockFetcherScheduler {
                 .block();
     }
 
-    @Scheduled(fixedRate = 60000)
+    //@Scheduled(fixedRate = 30000)
     public void fetchStockDetailsList() {
         Flux.fromIterable(stockSymbolCache.keySet())
                 .window(20)
                 .concatMap(batch -> batch
                         .flatMap(symbol -> stockInfoHttpEntryLoader.getStockDetails(symbol)
                                 .map(stockInfoDetails -> {
-                                    String industry = stockInfoDetails.getStockInfo()
-                                            .get(symbol)
-                                            .getIndustryInfo()
-                                            .getIndustry();
+                                    String industry = "";
+                                    if (MapUtils.isNotEmpty(stockInfoDetails.getStockInfo())) {
+                                        industry = stockInfoDetails.getStockInfo()
+                                                .get(symbol)
+                                                .getIndustryInfo()
+                                                .getIndustry();
+                                    }
                                     return Map.entry(industry, symbol);
                                 })
                         )

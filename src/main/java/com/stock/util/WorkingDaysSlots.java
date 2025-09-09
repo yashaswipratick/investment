@@ -17,7 +17,7 @@ public class WorkingDaysSlots {
         TreeSet<LocalDate> workingDays = new TreeSet<>(); // Natural order = chronological
         LocalDate startDate = LocalDate.parse(inputDate, FORMATTER);
 
-        LocalDate date = startDate.minusDays(1); // start from 1 day before input
+        LocalDate date = startDate; // start from 1 day before input
         while (workingDays.size() < n) {
             if (!(date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY)) {
                 workingDays.add(date);
@@ -76,6 +76,6 @@ public class WorkingDaysSlots {
     }
 
     public static void main(String[] args) {
-        getDateSlots("23-08-2025", 200);
+        System.out.println(getDateSlots("08-09-2025", 200));
     }
 }

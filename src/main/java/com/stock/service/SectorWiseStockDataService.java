@@ -66,4 +66,10 @@ public class SectorWiseStockDataService {
         return repository.findAll()
                 .collect(Collectors.toList());
     }
+
+    public Mono<List<String>> getAllSectors() {
+        return repository.findAll()
+                .flatMap(details -> Mono.justOrEmpty(details.getKey().getKey()))
+                .collect(Collectors.toList());
+    }
 }

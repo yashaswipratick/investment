@@ -5,8 +5,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.csv.CsvMapper;
-import com.fasterxml.jackson.dataformat.csv.CsvSchema;
+/*import com.fasterxml.jackson.dataformat.csv.CsvMapper;
+import com.fasterxml.jackson.dataformat.csv.CsvSchema;*/
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -26,13 +26,13 @@ public class Test {
         readJsonFile();
     }
 
-    public static List<Map<?, ?>> readObjectsFromCsv(File file) throws IOException {
+    /*public static List<Map<?, ?>> readObjectsFromCsv(File file) throws IOException {
         CsvSchema bootstrap = CsvSchema.emptySchema().withHeader();
         CsvMapper csvMapper = new CsvMapper();
         try (MappingIterator<Map<?, ?>> mappingIterator = csvMapper.readerFor(Map.class).with(bootstrap).readValues(file)) {
             return mappingIterator.readAll();
         }
-    }
+    }*/
 
     public static List<String> readJsonFile() throws IOException {
         List<String> stockSymbols = new ArrayList<>();

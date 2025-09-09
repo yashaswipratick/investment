@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.util.UriBuilder;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.util.retry.Retry;
@@ -60,8 +62,9 @@ public class StockInfoHttpEntryLoader {
         return client.get()
                 .retrieve()
                 .toBodilessEntity()
-                .flatMap(entity -> fetchApiData(client, buildURL(symbol)))
-                .onErrorResume(error -> {
+                .flatMap(entity -> fetchApiData(client, symbol))
+                .doOnNext(stockInfoDetails -> log.info("Fetched NSE stock details from web client. symbol: {}, details: {} ", symbol, stockInfoDetails))
+                /*.onErrorResume(error -> {
                     log.info("⚠️ WebClient failed after retries. Trying curl fallback... Error: {}", error.getMessage());
 
                     String response = curlCommandGenerator.generateCurlCommand(buildURL(symbol));
@@ -111,11 +114,11 @@ public class StockInfoHttpEntryLoader {
                         }
                     }
                     return Mono.empty();
-                }))
+                }))*/
                 .doOnError(e -> log.error("symbol -> {},  Error: {} ", symbol, e.getMessage()));
     }
 
-    private Mono<StockInfoDetails> fetchApiData(WebClient client, String url) {
+    private Mono<StockInfoDetails> fetchApiData(WebClient client, String stockSymbol) {
         // Print the raw response
 
         // Define a predicate to check for 401 status
@@ -125,7 +128,11 @@ public class StockInfoHttpEntryLoader {
                                 ((WebClientResponseException) throwable).getStatusCode().value() == 403);
 
         return client.get()
-                .uri(url)
+                .uri(uriBuilder -> {
+                    UriBuilder builder = uriBuilder.path("/api/quote-equity");
+                    builder.queryParam("symbol", stockSymbol);
+                    return builder.build();
+                })
                 .retrieve()
                 .onStatus(status -> status.value() != 200, ClientResponse::createException)
                 .bodyToMono(byte[].class)
@@ -134,14 +141,16 @@ public class StockInfoHttpEntryLoader {
                 .map(StockInfoHttpEntryLoader::convertResponseToDto)
                 .map(stockInfoDto -> {
                     HashMap<String, StockInfoDTO> stockInfoDetailsMap = Maps.newHashMapWithExpectedSize(1);
-                    stockInfoDetailsMap.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
+                    if (stockInfoDto.getInfo() != null) {
+                        stockInfoDetailsMap.put(stockInfoDto.getInfo().getSymbol(), stockInfoDto);
+                    }
                     return StockInfoDetails.builder()
                             .key(LocalDate.now().toString())
                             .stockInfo(stockInfoDetailsMap)
                             .build();
                 })
-                .doOnNext(stockInfoDetails -> log.info("Fetched NSE stock details. details: {} ", stockInfoDetails))
-                .switchIfEmpty(Mono.defer(() -> {
+                .doOnNext(stockInfoDetails -> log.info("Fetched NSE stock details. details: {} ", stockInfoDetails));
+                /*.switchIfEmpty(Mono.defer(() -> {
                     log.info("⚠️ WebClient failed after retries. Trying curl fallback... url: {}", url);
 
                     String response = curlCommandGenerator.generateCurlCommand(url);
@@ -217,7 +226,7 @@ public class StockInfoHttpEntryLoader {
                         }
                     }
                     return Mono.empty();
-                });
+                });*/
     }
 
     private static byte[] decompressGzip(byte[] compressed) {
