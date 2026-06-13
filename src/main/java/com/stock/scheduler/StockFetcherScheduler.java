@@ -46,7 +46,8 @@ public class StockFetcherScheduler {
 
     private static final Set<String> stockSymbolCache = new HashSet<>();
 
-    @PostConstruct
+    // @PostConstruct - Disabled: Remove @Autowired bean initialization to prevent startup failures
+    // This method will only be called explicitly when needed, not at application startup
     public void loadDataOnStartup() {
         service.getAllPositionStockSymbol()
                 .flatMap(stockSymbols -> {
@@ -104,8 +105,7 @@ public class StockFetcherScheduler {
                 .flatMapMany(symbols -> {
                     // Print symbols fetched from DB
                     log.info("Symbols fetched from DB. symbols: {}", symbols);
-
-                    https://www.nseindia.com/api/quote-equity?symbol=ADANIPORTS
+                    // Example endpoint: https://www.nseindia.com/api/quote-equity?symbol=ADANIPORTS
                     return Flux.fromIterable(symbols)
                             .filter(symbol -> symbol != null && !symbol.isEmpty()) // Optionally filter out null or empty symbols
                             .distinct(); // Ensure symbols are distinct

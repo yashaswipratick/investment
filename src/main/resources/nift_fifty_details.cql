@@ -23,8 +23,8 @@ CREATE TYPE meta (
     is_municipal_bond BOOLEAN,
     quotepreopenstatus FROZEN<quote_preopen_status>
 );
-CREATE TABLE stock_data (
-    symbol TEXT PRIMARY KEY,
+CREATE TYPE IF NOT EXISTS stock_data (
+    symbol TEXT,
     priority INT,
     identifier TEXT,
     series TEXT,
@@ -57,7 +57,7 @@ CREATE TYPE advance (
     advances TEXT,
     unchanged TEXT
 );
-CREATE TABLE nifty_fifty_details (
+CREATE TABLE IF NOT EXISTS nifty_fifty_details (
     name TEXT PRIMARY KEY,
     advance FROZEN<advance>,
     nifty_fifty_timestamp TEXT,

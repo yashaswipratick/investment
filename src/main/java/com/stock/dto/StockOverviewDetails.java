@@ -14,7 +14,7 @@ import java.util.Map;
 @AllArgsConstructor
 @Builder(toBuilder = true)
 @ToString
-@Table("stock_overview_details.cql")
+@Table("stock_overview_details")
 public class StockOverviewDetails {
 
     @PrimaryKey

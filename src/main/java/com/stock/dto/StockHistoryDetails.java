@@ -30,7 +30,7 @@ public class StockHistoryDetails {
     private Double low;
 
     @Column("prevClose")
-    private Double pevClose;
+    private Double prevClose;
 
     @Column("ltp")
     private Double ltp;

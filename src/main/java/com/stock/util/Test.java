@@ -9,9 +9,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;*/
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.springframework.core.io.ClassPathResource;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 
 public class Test {
@@ -36,11 +38,12 @@ public class Test {
 
     public static List<String> readJsonFile() throws IOException {
         List<String> stockSymbols = new ArrayList<>();
-        String path = "/Users/yashaswipratick/projects/investment/src/main/java/com/stock/util/Nifty-50.json";
         ObjectMapper mapper = new ObjectMapper();
-        // Read JSON file and map it to a List of Maps
+        // Read JSON file from classpath resources
+        ClassPathResource resource = new ClassPathResource("Nifty-50.json");
+        InputStream inputStream = resource.getInputStream();
         NiftyData niftyData = mapper.readValue(
-                new File(path),
+                inputStream,
                 NiftyData.class
         );
         // Access data
