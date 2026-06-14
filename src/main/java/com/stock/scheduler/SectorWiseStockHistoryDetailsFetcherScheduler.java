@@ -1,18 +1,22 @@
 package com.stock.scheduler;
 
 import com.stock.dto.StockHistoryRequest;
-import com.stock.service.*;
+import com.stock.service.SectorWiseStockDataIntegrator;
+import com.stock.service.StockHistoryDataIntegrator;
 import com.stock.util.Utility;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -20,85 +24,78 @@ import java.util.stream.Collectors;
 public class SectorWiseStockHistoryDetailsFetcherScheduler {
 
     @Autowired
-    private StockInfoHttpEntryLoader stockInfoHttpEntryLoader;
-
-    @Autowired
-    private StockDescriptionIntegrator stockDescriptionIntegrator;
-
-    @Autowired
     private SectorWiseStockDataIntegrator sectorWiseStockDataIntegrator;
-
-    @Autowired
-    private StockHistoryDataHttpEntryLoader stockHistoryDataHttpEntryLoader;
 
     @Autowired
     private StockHistoryDataIntegrator stockHistoryDataIntegrator;
 
     private static final Map<String, List<String>> sectorWisestockSymbolCache = new ConcurrentHashMap<>();
     private static final Map<String, Boolean> stockSymbolCache = new ConcurrentHashMap<>();
+    // In-memory lock to avoid overlapping executions in a single JVM.
+    private final AtomicBoolean fetchJobRunning = new AtomicBoolean(false);
 
-    @PostConstruct
+    //@PostConstruct
     public void loadDataOnStartup() {
-
         sectorWiseStockDataIntegrator.getSectorWiseStock()
-                .flatMap(sectorWiseStockDetails -> {
-                    // Cache all sector-wise stock details
-                    sectorWisestockSymbolCache.putAll(sectorWiseStockDetails);
-                    return Mono.justOrEmpty(sectorWiseStockDetails);
-                })
+                .doOnNext(sectorWisestockSymbolCache::putAll)
                 .flatMap(stringListMap ->
                         Flux.fromIterable(stringListMap.entrySet())
-                                // flatten: each stock symbol gets paired with TRUE
                                 .flatMap(entry -> Flux.fromIterable(entry.getValue())
                                         .map(symbol -> Map.entry(symbol, Boolean.TRUE)))
-                                // collect into a concurrent map
                                 .collect(Collectors.toConcurrentMap(
                                         Map.Entry::getKey,
                                         Map.Entry::getValue,
-                                        (a, b) -> a, // merge function in case of duplicate keys
+                                        (a, b) -> a,
                                         ConcurrentHashMap::new
                                 ))
                 )
-                .flatMap(stockSymbols -> {
-                    stockSymbolCache.putAll(stockSymbols);
-                    return Mono.justOrEmpty(stockSymbols);
-                })
-                .doOnNext(sectorWiseStockDetailsMap ->
-                        log.info("Active sectors stock symbol loaded to fetch the data from NSE. count: {} symbols: {}",
-                                sectorWiseStockDetailsMap.size(), sectorWiseStockDetailsMap))
+                .doOnNext(stockSymbolCache::putAll)
+                .doOnNext(stockSymbols ->
+                        log.info("Active sector stock symbols loaded. count: {}", stockSymbols.size()))
                 .block();
-
     }
 
-    //@Scheduled(fixedRate = 60000)
+    /*@Scheduled(
+            fixedDelayString = "${scheduler.sector-stock-history.fixed-delay-ms:60000}",
+            initialDelayString = "${scheduler.sector-stock-history.initial-delay-ms:15000}"
+    )*/
     public void fetchStockDetailsList() {
-        Flux.just(stockSymbolCache)
-                .flatMap(symbols -> Flux.fromIterable(symbols.keySet())
-                        .flatMap(stockSymbol -> {
-                            List<StockHistoryRequest> stockHistoryRequest = stockHistoryDataIntegrator.getStockHistoryRequests(StockHistoryRequest.builder().stockSymbol(stockSymbol)
+        if (!fetchJobRunning.compareAndSet(false, true)) {
+            log.info("Skipping scheduled run: previous sector stock history fetch is still in progress");
+            return;
+        }
+
+        // Snapshot keys to avoid concurrent modification while we remove successfully processed symbols.
+        Flux.fromIterable(new ArrayList<>(stockSymbolCache.keySet()))
+                .flatMap(stockSymbol -> {
+                    List<StockHistoryRequest> stockHistoryRequests = stockHistoryDataIntegrator.getStockHistoryRequests(
+                            StockHistoryRequest.builder()
+                                    .stockSymbol(stockSymbol)
                                     .to(Utility.dateFormatterCurrentDay())
-                                            .series("EQ")
+                                    .series("EQ")
                                     .numOfDays(250)
-                                    .build());
-                            return stockHistoryDataIntegrator.fetchStockHistoryDetailsFromNSE(stockHistoryRequest);
-                        }, 10)
-                        .collectList()
-                        .map(stockHistoryList -> Map.entry(symbols, stockHistoryList))
-                )
-                .collect(Collectors.toMap(Map.Entry::getKey,
-                        Map.Entry::getValue,
-                        (existing, newList) -> {
-                            existing.addAll(newList);
-                            return existing;
-                        }))
-                .flatMapMany(details -> Flux.fromIterable(details.entrySet()))
-                .flatMap(entry -> {
-                    stockHistoryDataIntegrator.saveAll(entry.getValue());
-                    stockSymbolCache.remove(entry.getKey());
-                    return Mono.justOrEmpty(entry.getValue());
+                                    .build()
+                    );
+
+                    return stockHistoryDataIntegrator.fetchStockHistoryDetailsFromNSE(stockHistoryRequests)
+                            .flatMap(stockHistoryDataIntegrator::save)
+                            .doOnNext(saved -> {
+                                stockSymbolCache.remove(stockSymbol);
+                                log.info("Saved history for symbol: {}. Remaining cache size: {}", stockSymbol, stockSymbolCache.size());
+                            })
+                            // Keep scheduler alive per symbol failure; failed symbols stay in cache for next run.
+                            .onErrorResume(error -> {
+                                log.error("Failed to fetch/save stock history for symbol: {}. Error: {}", stockSymbol, error.getMessage());
+                                return Mono.empty();
+                            });
                 }, 10)
-                .doOnNext(stockHistories -> log.info("stockSymbolCache data count: {} ", stockSymbolCache.size()))
-                .collect(Collectors.toList())
+                .collectList()
+                .doOnNext(savedList -> log.info("SectorWise history fetch completed. Saved symbols count: {}, pending: {}",
+                        savedList.size(), stockSymbolCache.size()))
+                .doFinally(signalType -> {
+                    fetchJobRunning.set(false);
+                    log.info("SectorWise history scheduler run finished with signal: {}", signalType);
+                })
                 .subscribe();
     }
 }

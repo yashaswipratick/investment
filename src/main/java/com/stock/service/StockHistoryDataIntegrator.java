@@ -71,6 +71,10 @@ public class StockHistoryDataIntegrator {
                         .flatMapMany(Flux::fromIterable), 10)
                 .collect(Collectors.toList())
                 .flatMap(stockHistories -> {
+                    if (stockHistories.isEmpty()) {
+                        log.warn("No stock history data fetched from NSE");
+                        return Mono.empty();
+                    }
                     // Build TreeMap<LocalDate, StockHistoryDetails>
                     TreeMap<LocalDate, StockHistoryDetails> stockHistoryDetailsMap =
                             stockHistories.stream()
@@ -80,11 +84,13 @@ public class StockHistoryDataIntegrator {
                                             (existing, replacement) -> replacement, // merge function
                                             TreeMap::new                            // supplier
                                     ));
+                    // Get stock symbol from first element (optimized - single stream call)
+                    String stockSymbol = stockHistories.get(0).getStockName();
                     return Mono.justOrEmpty(StockHistory.builder()
-                                    .key(StockHistoryKey.builder().key(stockHistories.stream().findFirst().map(StockHistoryDetails::getStockName).isPresent() ? stockHistories.stream().findFirst().map(StockHistoryDetails::getStockName).get() : "default").build())
+                                    .key(StockHistoryKey.builder().key(stockSymbol).build())
                                     .stockHistoryDetails(stockHistoryDetailsMap)
                                     .build())
-                            .doOnNext(details -> log.info("stock history data fetched. details: {}, key: {} ", details, details.getKey()));
+                            .doOnNext(details -> log.info("stock history data fetched. count: {}, key: {} ", details.getStockHistoryDetails().size(), details.getKey()));
                 });
     }
 

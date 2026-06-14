@@ -39,7 +39,7 @@ public class SectorWiseStockFetcherScheduler {
 
     private static final Map<String, Boolean> stockSymbolCache = new ConcurrentHashMap<>();
 
-    @PostConstruct
+    //@PostConstruct
     public void loadDataOnStartup() {
         stockDescriptionIntegrator.getAll()
                 .flatMap(symbols -> Flux.fromIterable(symbols.keySet())

@@ -5,7 +5,6 @@ import com.stock.dto.StockHistoryDetails;
 import com.stock.dto.key.StockHistoryKey;
 import com.stock.repository.StockHistoryDataRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,35 +25,26 @@ public class StockHistoryDataService {
     @Autowired
     private StockHistoryDataRepository repository;
 
-    public Mono<StockHistory> upsert(StockHistory details) {
-        if (details == null) {
-            return Mono.error(() -> new Throwable("StockInfoDetails is empty"));
-        }
-        return get(details.getKey())
-                .flatMap(data -> repository.save(data)
-                        .doOnNext(detailsLog ->
-                                log.info("Stock info details saved successfully. key: {}", detailsLog.getKey()))
-                        .doOnError(error -> {
-                            if (error instanceof QueryTimeoutException) {
-                                log.error("Query timed out. Retrying...");
-                            } else {
-                                log.error("Error saving details: {}", error.getMessage());
-                            }
-                        })
-                        .retryWhen(Retry.backoff(5, Duration.ofSeconds(2))
-                                .filter(throwable -> throwable instanceof QueryTimeoutException)
-                                .doBeforeRetry(retrySignal -> log.info("Retry attempt #{} due to: {}", retrySignal.totalRetries(), retrySignal.failure().getMessage())))
-                        .onErrorResume(throwable -> {
-                            log.error("Failed to save details after retries: {}", throwable.getMessage());
-                            return Mono.error(throwable);
-                        }));
-    }
-
     public Mono<StockHistory> save(StockHistory details) {
         if (details == null) {
-            return Mono.error(() -> new Throwable("StockInfoDetails is empty"));
+            return Mono.error(() -> new Throwable("StockHistory is empty"));
         }
-        return repository.save(details);
+        return repository.save(details)
+                .doOnNext(saved -> log.info("Stock history saved successfully. key: {}, count: {}", saved.getKey(), saved.getStockHistoryDetails().size()))
+                .doOnError(error -> {
+                    if (error instanceof QueryTimeoutException) {
+                        log.error("Query timed out while saving stock history. key: {}", details.getKey());
+                    } else {
+                        log.error("Error saving stock history: {}", error.getMessage());
+                    }
+                })
+                .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
+                        .filter(throwable -> throwable instanceof QueryTimeoutException)
+                        .doBeforeRetry(retrySignal -> log.info("Retry attempt #{} for stock history. key: {}", retrySignal.totalRetries(), details.getKey())))
+                .onErrorResume(error -> {
+                    log.error("Failed to save stock history after retries: {}", error.getMessage());
+                    return Mono.error(error);
+                });
     }
 
     public Mono<List<StockHistory>> saveAll(List<StockHistory> details) {
@@ -64,7 +54,6 @@ public class StockHistoryDataService {
         return repository.saveAll(details)
                 .collect(Collectors.toList());
     }
-
 
 
     public Mono<StockHistory> get(StockHistoryKey key) {
@@ -84,7 +73,8 @@ public class StockHistoryDataService {
                 .collect(Collectors.toMap(
                         Pair::getLeft, // stock symbol as key
                         pair -> {
-                            TreeMap<LocalDate, StockHistoryDetails> tree = new TreeMap<>(Collections.reverseOrder());
+                            // TreeMap in natural order (chronological, oldest first) - do NOT use reverseOrder()
+                            TreeMap<LocalDate, StockHistoryDetails> tree = new TreeMap<>();
                             for (Map.Entry<LocalDate, StockHistoryDetails> entry : pair.getRight()) {
                                 tree.put(entry.getKey(), entry.getValue());
                             }
@@ -100,9 +90,9 @@ public class StockHistoryDataService {
 
     public Mono<Void> delete(StockHistoryKey key) {
         if (key == null) {
-            return Mono.error(() -> new Throwable("symbol is empty"));
+            return Mono.error(new Throwable("symbol is empty"));
         }
         return repository.deleteById(key)
-                .doOnNext(detailsLog -> log.info("Stock infor details deleted for date. date: {}", key));
+                .doFinally(signalType -> log.info("Stock history details deleted for key: {}", key));
     }
 }
