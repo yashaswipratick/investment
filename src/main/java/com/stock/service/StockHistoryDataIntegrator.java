@@ -2,6 +2,7 @@ package com.stock.service;
 
 import com.stock.dto.*;
 import com.stock.dto.key.StockHistoryKey;
+import com.stock.entryloader.StockAnalyserDataHttpEntryLoader;
 import com.stock.entryloader.StockHistoryDataHttpEntryLoader;
 import com.stock.util.Utility;
 import com.stock.util.WorkingDaysSlots;
@@ -27,6 +28,9 @@ public class StockHistoryDataIntegrator {
 
     @Autowired
     private StockHistoryDataHttpEntryLoader entryLoader;
+
+    @Autowired
+    private StockAnalyserDataHttpEntryLoader analyserEntryLoader;
 
     @Autowired
     private SectorWiseStockDataIntegrator sectorWiseStockDataIntegrator;
@@ -242,7 +246,7 @@ public class StockHistoryDataIntegrator {
                             .to(chunkTo)
                             .build();
 
-                    return entryLoader.getStockHistoryFromNextApi(req)
+                    return analyserEntryLoader.getStockHistoryFromNextApi(req)
                             .doOnNext(sh -> {
                                 int count = sh.getStockHistoryDetails() != null
                                         ? sh.getStockHistoryDetails().size() : 0;
@@ -253,7 +257,7 @@ public class StockHistoryDataIntegrator {
                                 }
                             })
                             .onErrorResume(err -> {
-                                log.error("[ChunkedFetch] {} chunk {} → {} failed: {}",
+                                log.error("[ChunkedFetch] {} chunk {} → {} failed after per-URL retries: {}",
                                         symbol, chunkFrom, chunkTo, err.getMessage());
                                 return Mono.empty();
                             })
@@ -292,4 +296,5 @@ public class StockHistoryDataIntegrator {
         }
         return chunks;
     }
+
 }
