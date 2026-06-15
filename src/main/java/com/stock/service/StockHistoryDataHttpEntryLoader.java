@@ -268,6 +268,34 @@ public class StockHistoryDataHttpEntryLoader {
         return url;
     }
 
+    private String buildURLForNextApi(StockHistoryRequest request) {
+        String url = String.format(
+                "https://www.nseindia.com/api/NextApi/apiClient/GetQuoteApi" +
+                "?functionName=getHistoricalTradeData&symbol=%s&series=%s&fromDate=%s&toDate=%s&csv=true",
+                request.getStockSymbol(),
+                request.getSeries(),
+                request.getFrom(),
+                request.getTo()
+        );
+        log.info("NSE NextApi URL: {}", url);
+        return url;
+    }
+
+    /**
+     * Fetches stock history from NSE NextApi (GetQuoteApi) using the cookie from cookie.txt
+     * merged with the fresh session cookie, then saves the parsed result.
+     */
+    public Mono<StockHistory> getStockHistoryFromNextApi(StockHistoryRequest request) {
+        if (isInvalidRequest(request)) {
+            log.warn("Invalid stock history request for NextApi flow: {}", request);
+            return Mono.empty();
+        }
+
+        return nseSessionManager.generateCookieWithFileAppended()
+                .map(cookie -> buildWebClient(cookie, true))
+                .flatMap(client -> fetchApiData(client, buildURLForNextApi(request), request.getStockSymbol()));
+    }
+
     private String buildURLForCSVResp(StockHistoryRequest request) {
         String url = String.format(
                 "https://www.nseindia.com/api/historical/cm/equity?symbol=%s&series=[\"%s\"]&from=%s&to=%s&csv=true",

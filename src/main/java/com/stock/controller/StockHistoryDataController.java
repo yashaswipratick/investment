@@ -44,4 +44,28 @@ public class StockHistoryDataController {
     public Mono<ResponseEntity<Mono<StockHistory>>> getCSVData(@RequestBody StockHistoryRequest stockHistory) throws Exception {
         return Mono.justOrEmpty(ResponseEntity.ok(integrator.fetchCSVAndSave(stockHistory)));
     }
+
+    /**
+     * Fetches stock history from NSE NextApi (GetQuoteApi) using cookie from cookie.txt
+     * merged with a fresh session cookie, then persists to Cassandra stock_history table.
+     *
+     * Request body example:
+     * {
+     *   "stockSymbol": "INFY",
+     *   "series":      "EQ",
+     *   "from":        "15-06-2025",
+     *   "to":          "15-06-2026"
+     * }
+     *
+     * Internally calls:
+     *   GET https://www.nseindia.com/api/NextApi/apiClient/GetQuoteApi
+     *       ?functionName=getHistoricalTradeData
+     *       &symbol={stockSymbol}&series={series}
+     *       &fromDate={from}&toDate={to}&csv=true
+     */
+    @PostMapping(value = "/stockHistoryFromNextApi", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Mono<StockHistory>>> fetchStockHistoryFromNextApi(
+            @RequestBody StockHistoryRequest stockHistoryRequest) {
+        return Mono.justOrEmpty(ResponseEntity.ok(integrator.fetchAndSaveFromNextApi(stockHistoryRequest)));
+    }
 }
