@@ -12,6 +12,8 @@ server:
 
 spring:
   mvc:
+    async:
+      request-timeout: 180000 # 3 minutes for long-running analyser requests
     pathmatch:
       matching-strategy: ant_path_matcher
   cassandra:

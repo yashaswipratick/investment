@@ -4,6 +4,7 @@ import com.stock.dto.StockHistory;
 import com.stock.dto.StockHistoryDetails;
 import com.stock.dto.StockHistoryRequest;
 import com.stock.dto.key.StockHistoryKey;
+import com.stock.service.CookieCache;
 import com.stock.service.NseSessionManager;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
@@ -38,9 +40,16 @@ import java.util.zip.GZIPInputStream;
 public class StockAnalyserDataHttpEntryLoader {
 
     private final NseSessionManager nseSessionManager;
+    private final CookieCache cookieCache;
 
-    public StockAnalyserDataHttpEntryLoader(NseSessionManager nseSessionManager) {
+    private static final String COOKIE_CACHE_KEY = "nse_browser_cookie";
+    private static final int COOKIE_REFRESH_AFTER_CALLS = 4;
+    private final AtomicInteger apiHitCounter = new AtomicInteger(0);
+
+    public StockAnalyserDataHttpEntryLoader(NseSessionManager nseSessionManager,
+                                            CookieCache cookieCache) {
         this.nseSessionManager = nseSessionManager;
+        this.cookieCache = cookieCache;
     }
 
     private static final String BASE_URL = "https://www.nseindia.com/";
@@ -94,7 +103,7 @@ public class StockAnalyserDataHttpEntryLoader {
         }
 
         // Generate fresh NSE session cookie from warm-up call (no file needed)
-        return nseSessionManager.generateFreshSessionCookie()
+        return generateCookieWithPeriodicRefresh(request.getStockSymbol(), request.getFrom(), request.getTo())
                 .map(cookie -> buildWebClient(cookie, false))
                 .flatMap(client -> fetchApiDataList(client, buildURL(request)))
                 .doOnError(e -> log.error("symbol -> {},  Error: {} ", request, e.getMessage()));
@@ -107,9 +116,24 @@ public class StockAnalyserDataHttpEntryLoader {
         }
 
         // Generate fresh NSE session cookie from warm-up call (no file needed)
-        return nseSessionManager.generateFreshSessionCookie()
+        return generateCookieWithPeriodicRefresh(request.getStockSymbol(), request.getFrom(), request.getTo())
                 .map(cookie -> buildWebClient(cookie, true))
                 .flatMap(client -> fetchApiData(client, buildURLForCSVResp(request), request.getStockSymbol()));
+    }
+
+    /**
+     * For analyser flow only: after every 4 NSE hits, evict cached cookie
+     * so the next call fetches a fresh cookie via Playwright.
+     */
+    private Mono<String> generateCookieWithPeriodicRefresh(String symbol, String from, String to) {
+        int hit = apiHitCounter.incrementAndGet();
+        if (hit > COOKIE_REFRESH_AFTER_CALLS) {
+            log.info("{} API hit count={} (> {}). Refreshing cookie cache before call symbol={} from={} to={}",
+                    LOADER_TAG, hit, COOKIE_REFRESH_AFTER_CALLS, symbol, from, to);
+            cookieCache.evict(COOKIE_CACHE_KEY);
+            apiHitCounter.set(1); // current call becomes the first hit in the next cycle
+        }
+        return nseSessionManager.generateCookieUsingBrowserAutomation();
     }
 
     /**
@@ -373,7 +397,7 @@ public class StockAnalyserDataHttpEntryLoader {
         log.info("{} Executing NextApi fetch for symbol={} from={} to={}",
                 LOADER_TAG, request.getStockSymbol(), request.getFrom(), request.getTo());
 
-        return nseSessionManager.generateCookieUsingBrowserAutomation()
+        return generateCookieWithPeriodicRefresh(request.getStockSymbol(), request.getFrom(), request.getTo())
                 .map(cookie -> buildWebClient(cookie, true))
                 .flatMap(client -> fetchApiData(client, buildURLForNextApi(request), request.getStockSymbol()));
     }
