@@ -1,6 +1,8 @@
 package com.stock.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
@@ -10,7 +12,6 @@ import reactor.netty.http.client.HttpClient;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -22,22 +23,49 @@ public class NseSessionManager {
     private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
     private static final String ACCEPT_LANGUAGE = "en-GB,en-US;q=0.9,en;q=0.8";
     private static final String ACCEPT_ENCODING = "gzip, deflate";
-    private static final String COOKIE_FILE_PATH =
-            "/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/cookie.txt";
+    
+    // Cookie file: src/main/resources/cookie.txt
+    // "classpath:cookie.txt" tells Spring: "Look in src/main/resources/ (the classpath)"
+    private static final String COOKIE_CLASSPATH_RESOURCE = "classpath:cookie.txt";
+
+    @Autowired
+    private BrowserCookieService browserCookieService;
 
     /**
-     * Reads cookie content from cookie.txt.
+     * Reads cookie from: src/main/resources/cookie.txt
+     * 
+     * How ClassPathResource resolves the path:
+     * - "classpath:cookie.txt" tells Spring to look in the classpath
+     * - Classpath includes: src/main/resources/ (development) or JAR content (production)
+     * - Spring automatically finds it in either location
+     * 
+     * Examples:
+     * - Development: src/main/resources/cookie.txt ✅
+     * - Production JAR: BOOT-INF/classes/cookie.txt inside JAR ✅
+     * - Docker: Finds it inside the container's JAR ✅
+     * 
      * Returns empty string if the file is missing or empty.
      */
     public String readCookieFromFile() {
         try {
-            String content = new String(Files.readAllBytes(Paths.get(COOKIE_FILE_PATH))).trim();
-            if (!content.isEmpty()) {
-                log.info("📄 Loaded cookie from file: {} chars", content.length());
+            // ClassPathResource with "classpath:" prefix explicitly tells Spring
+            // to look in src/main/resources/ on the classpath
+            ClassPathResource resource = new ClassPathResource(COOKIE_CLASSPATH_RESOURCE);
+            
+            if (!resource.exists()) {
+                log.warn("⚠️ Cookie file NOT found at: src/main/resources/cookie.txt");
+                return "";
             }
+            
+            String content = new String(Files.readAllBytes(resource.getFile().toPath())).trim();
+            
+            if (!content.isEmpty()) {
+                log.info("✅ Loaded cookie from src/main/resources/cookie.txt ({} chars)", content.length());
+            }
+            
             return content;
         } catch (IOException e) {
-            log.warn("⚠️ Could not read cookie file at {}: {}", COOKIE_FILE_PATH, e.getMessage());
+            log.warn("⚠️ Error reading src/main/resources/cookie.txt: {}", e.getMessage());
             return "";
         }
     }
@@ -99,6 +127,44 @@ public class NseSessionManager {
             }
             return dynamicCookie + "; " + fileCookie;
         });
+    }
+
+    /**
+     * Get NSE cookies using Playwright browser automation with cache support.
+     * Falls back to file-based cookie and fresh warm-up call if needed.
+     *
+     * Priority order:
+     * 1. Cached Playwright browser cookies (fast, fresh)
+     * 2. Append static file cookie (if available)
+     * 3. Fall back to fresh warm-up call (last resort)
+     *
+     * @return Mono containing merged cookie string
+     */
+    public Mono<String> generateCookieUsingBrowserAutomation() {
+        return browserCookieService.getNseCookies()
+                .flatMap(browserCookie -> {
+                    log.info("🔄 Using Playwright browser-fetched cookies as primary source");
+                    String fileCookie = readCookieFromFile();
+
+                    if (fileCookie.isEmpty()) {
+                        log.info("✅ Browser-fetched cookie (no file cookie to append)");
+                        return Mono.just(browserCookie);
+                    }
+
+                    if (browserCookie.isEmpty()) {
+                        log.warn("⚠️ Browser cookie empty, using file cookie only");
+                        return Mono.just(fileCookie);
+                    }
+
+                    String merged = browserCookie + "; " + fileCookie;
+                    log.info("✅ Merged browser cookie + file cookie");
+                    return Mono.just(merged);
+                })
+                .doOnError(e -> log.warn("⚠️ Browser cookie fetch failed ({}), falling back to fresh warm-up", e.getMessage()))
+                .onErrorResume(e -> {
+                    log.info("🔄 Falling back to fresh NSE warm-up call...");
+                    return generateCookieWithFileAppended();
+                });
     }
 
     /**

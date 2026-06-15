@@ -190,16 +190,12 @@
 			<version>4.1.97.Final</version> <!-- Match with your Spring Boot Netty version -->
 			<classifier>osx-x86_64</classifier>
 		</dependency>
-			<!-- Your existing dependencies -->
-
-			<!--<dependency>
-				<groupId>org.springframework.ai</groupId>
-				<artifactId>spring-ai-openai-spring-boot-starter</artifactId>
-				<version>0.8.1</version>
-			</dependency>-->
-
-
-
+		<!-- Playwright for browser automation and cookie fetching -->
+		<dependency>
+			<groupId>com.microsoft.playwright</groupId>
+			<artifactId>playwright</artifactId>
+			<version>1.40.0</version>
+		</dependency>
 
 	</dependencies>
 

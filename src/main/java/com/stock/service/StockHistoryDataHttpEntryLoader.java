@@ -282,8 +282,19 @@ public class StockHistoryDataHttpEntryLoader {
     }
 
     /**
-     * Fetches stock history from NSE NextApi (GetQuoteApi) using the cookie from cookie.txt
-     * merged with the fresh session cookie, then saves the parsed result.
+     * Fetches stock history from NSE NextApi (GetQuoteApi) using Playwright browser cookies.
+     * 
+     * Flow:
+     * 1. Try to get cached browser cookies (fast, 55-min TTL)
+     * 2. If cache miss: Playwright launches Chromium, visits NSE, extracts cookies
+     * 3. Merge with static file cookie (if available)
+     * 4. Make request to NSE with merged cookies
+     * 5. Parse CSV response and save to Cassandra
+     * 
+     * This is more robust than the old method because:
+     * - Automatically refreshes cookies every 50 minutes
+     * - Works even if static cookie.txt expires
+     * - Uses real browser automation (handles CloudFlare, JS execution, etc.)
      */
     public Mono<StockHistory> getStockHistoryFromNextApi(StockHistoryRequest request) {
         if (isInvalidRequest(request)) {
@@ -291,7 +302,7 @@ public class StockHistoryDataHttpEntryLoader {
             return Mono.empty();
         }
 
-        return nseSessionManager.generateCookieWithFileAppended()
+        return nseSessionManager.generateCookieUsingBrowserAutomation()
                 .map(cookie -> buildWebClient(cookie, true))
                 .flatMap(client -> fetchApiData(client, buildURLForNextApi(request), request.getStockSymbol()));
     }

@@ -24,8 +24,13 @@ from urllib.parse import quote
 
 
 NSE_BASE = "https://www.nseindia.com"
-DEFAULT_OUTPUT_DIR = "/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/historical-data"
-COOKIE_FILE_PATH = "/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/cookie.txt"
+
+# Determine paths relative to script location (portable across environments)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESOURCES_DIR = os.path.join(SCRIPT_DIR, "..", "src", "main", "resources")
+DEFAULT_OUTPUT_DIR = os.path.join(RESOURCES_DIR, "historical-data")
+COOKIE_FILE_PATH = os.path.join(RESOURCES_DIR, "cookie.txt")
+
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
