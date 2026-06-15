@@ -44,6 +44,7 @@ public class StockHistoryDataHttpEntryLoader {
     }
 
     private static final String BASE_URL = "https://www.nseindia.com/";
+    private static final String LOADER_TAG = "[NORMAL_LOADER]";
     private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
     private static final String ACCEPT_LANGUAGE = "en-GB,en-US;q=0.9,en;q=0.8";
     private static final String ACCEPT_ENCODING = "gzip, deflate";
@@ -337,7 +338,7 @@ public class StockHistoryDataHttpEntryLoader {
                 request.getFrom(),
                 request.getTo()
         );
-        log.info("NSE NextApi URL: {}", url);
+        log.info("{} NSE NextApi URL: {}", LOADER_TAG, url);
         return url;
     }
 
@@ -361,6 +362,9 @@ public class StockHistoryDataHttpEntryLoader {
             log.warn("Invalid stock history request for NextApi flow: {}", request);
             return Mono.empty();
         }
+
+        log.info("{} Executing NextApi fetch for symbol={} from={} to={}",
+                LOADER_TAG, request.getStockSymbol(), request.getFrom(), request.getTo());
 
         return nseSessionManager.generateCookieUsingBrowserAutomation()
                 .map(cookie -> buildWebClient(cookie, true))
