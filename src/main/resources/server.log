@@ -1,4 +1,0 @@
--Dlogging.file.name=/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/aerver.log
--Dlogging.level.root=INFO
--Dlogging.logback.rollingpolicy.max-file-size=20MB
--Dlogging.logback.rollingpolicy.max-history=7
