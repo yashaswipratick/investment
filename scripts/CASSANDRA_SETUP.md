@@ -7,8 +7,7 @@ Split workflow for Cassandra: one script installs/starts Cassandra, and a separa
 ```bash
 bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup_cassandra.sh
 
-bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
-  --keyspace realtime_stock_data
+bash /Users/yashaswipratick/projects/investment/scripts/apply_cassandra_schema.sh --keyspace realtime_stock_data --host localhost --port 9042 --cql-dir /Users/yashaswipratick/projects/investment/src/main/resources
 ```
 
 The scripts will:
@@ -95,8 +94,7 @@ These files create:
 ```bash
 bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup_cassandra.sh
 
-bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
-  --keyspace realtime_stock_data
+bash /Users/yashaswipratick/projects/investment/scripts/apply_cassandra_schema.sh --keyspace realtime_stock_data --host localhost --port 9042 --cql-dir /Users/yashaswipratick/projects/investment/src/main/resources
 ```
 
 ### Run with Debug Output
@@ -120,8 +118,7 @@ cqlsh localhost 9042
 
 Execute the full schema:
 ```bash
-bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
-  --keyspace realtime_stock_data
+bash /Users/yashaswipratick/projects/investment/scripts/apply_cassandra_schema.sh --keyspace realtime_stock_data --host localhost --port 9042 --cql-dir /Users/yashaswipratick/projects/investment/src/main/resources
 ```
 
 Execute a single CQL file:

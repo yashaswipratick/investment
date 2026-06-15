@@ -36,8 +36,7 @@ bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup
 After Cassandra is up, create tables/types in a chosen keyspace:
 
 ```bash
-bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
-  --keyspace realtime_stock_data
+bash /Users/yashaswipratick/projects/investment/scripts/apply_cassandra_schema.sh --keyspace realtime_stock_data --host localhost --port 9042 --cql-dir /Users/yashaswipratick/projects/investment/src/main/resources
 ```
 
 **What it does:**
