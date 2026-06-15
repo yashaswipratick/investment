@@ -42,7 +42,7 @@ spring:
 # OpenAI API configuration
 # api-key is the file path containing the actual API key text
 openai:
-  api-key: /Users/y0p03mn/Documents/OPEN_API_KEY.txt
+  api-key: /Users/yashaswipratick/Documents/OPEN_API_KEY.txt
   model-name: gpt-5.5
   service-tier: priority
 
