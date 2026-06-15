@@ -53,3 +53,14 @@ springfox:
     swagger:
       v2:
         path: /api-docs
+
+stock:
+  analyser:
+    # % weekday coverage needed to treat a chunk as already present in DB.
+    # Tuning guide:
+    #   90 -> stricter (fetch more often; only near-complete DB chunks are skipped)
+    #   75 -> balanced (recommended default)
+    #   60 -> lenient (fewer NSE calls; more DB chunks considered good enough)
+    # Example: if a 3-month chunk has 60 weekdays and DB has 50 rows:
+    #   coverage = 83.3%; skipped at 75/60, fetched at 90.
+    chunk-coverage-threshold: 75

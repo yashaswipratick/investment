@@ -95,13 +95,13 @@ public class StockAnalyserService {
                     log.info("Cassandra data for {} does not cover {}d window (earliest: {}). Auto-fetching in 3-month chunks.",
                             symbol, lookbackDays,
                             details == null || details.isEmpty() ? "N/A" : details.firstKey());
-                    return autoFetchChunked(symbol, lookbackDays)
+                    return autoFetchMissingChunks(symbol, lookbackDays, details)
                             .doOnNext(sh -> log.info("Chunked fetch done for {}. total records: {}",
                                     symbol, sh.getStockHistoryDetails().size()));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     log.info("No data in Cassandra for {}. Auto-fetching in 3-month chunks.", symbol);
-                    return autoFetchChunked(symbol, lookbackDays);
+                    return autoFetchMissingChunks(symbol, lookbackDays, new TreeMap<>());
                 }))
                 .flatMap(stockHistory -> runAnalysis(stockHistory, symbol, request.isIncludeAiCommentary()))
                 .flatMap(analysisResultPersistenceService::persist);
@@ -116,15 +116,18 @@ public class StockAnalyserService {
      *   chunks = 12 × 3-month windows  (Jan-Mar, Apr-Jun, …)
      *   Each chunk = 1 NSE call with a manageable date range
      */
-    private Mono<StockHistory> autoFetchChunked(String symbol, int lookbackDays) {
+    private Mono<StockHistory> autoFetchMissingChunks(String symbol,
+                                                      int lookbackDays,
+                                                      TreeMap<LocalDate, StockHistoryDetails> existingData) {
         LocalDate today    = LocalDate.now();
         LocalDate fromDate = today.minusDays(Math.round(lookbackDays * CALENDAR_MULTIPLIER));
 
         log.info("Auto-fetching chunked data for {} | lookbackDays={} | calendarFrom={} → {}",
                 symbol, lookbackDays, fromDate, today);
 
-        return stockHistoryDataIntegrator.fetchChunkedFromNextApiAndSave(
-                        symbol, "EQ", fromDate, today, 3)
+        return stockHistoryDataIntegrator.fetchMissingChunkedFromNextApiAndSave(
+                        symbol, "EQ", fromDate, today, 3,
+                        existingData != null ? existingData : new TreeMap<>())
                 .switchIfEmpty(Mono.error(new RuntimeException(
                         "NSE returned no data for: " + symbol +
                         ". Symbol may be invalid or NSE session cookie may have expired.")));

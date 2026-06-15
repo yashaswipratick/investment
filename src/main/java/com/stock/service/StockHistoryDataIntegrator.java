@@ -9,11 +9,13 @@ import com.stock.util.WorkingDaysSlots;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -34,6 +36,9 @@ public class StockHistoryDataIntegrator {
 
     @Autowired
     private SectorWiseStockDataIntegrator sectorWiseStockDataIntegrator;
+
+    @Value("${stock.analyser.chunk-coverage-threshold:75}")
+    private double chunkCoverageThresholdPct;
 
     private static final DateTimeFormatter NSE_FMT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
@@ -226,14 +231,53 @@ public class StockHistoryDataIntegrator {
     public Mono<StockHistory> fetchChunkedFromNextApiAndSave(
             String symbol, String series, LocalDate from, LocalDate to, int chunkMonths) {
 
+        return fetchMissingChunkedFromNextApiAndSave(
+                symbol, series, from, to, chunkMonths, new TreeMap<>());
+    }
+
+    /**
+     * DB-aware chunked backfill:
+     * - Builds the target chunk plan for [from..to]
+     * - Skips chunks already covered in existing DB data
+     * - Fetches only missing chunks from NSE
+     * - Merges fetched + existing and persists once when new data is fetched
+     */
+    public Mono<StockHistory> fetchMissingChunkedFromNextApiAndSave(
+            String symbol,
+            String series,
+            LocalDate from,
+            LocalDate to,
+            int chunkMonths,
+            TreeMap<LocalDate, StockHistoryDetails> existingData) {
+
         List<Pair<LocalDate, LocalDate>> chunks = buildCalendarChunks(from, to, chunkMonths);
         log.info("[ChunkedFetch] {} — {} chunk(s) of {}m each | {} → {}",
                 symbol, chunks.size(), chunkMonths, from, to);
 
-        // Mutable map; safe here — single reactive chain, no concurrency
         TreeMap<LocalDate, StockHistoryDetails> merged = new TreeMap<>();
+        if (existingData != null && !existingData.isEmpty()) {
+            merged.putAll(existingData);
+        }
 
-        return Flux.fromIterable(chunks)
+        List<Pair<LocalDate, LocalDate>> missingChunks = chunks.stream()
+                .filter(chunk -> !isChunkCovered(existingData, chunk.getLeft(), chunk.getRight(), chunkCoverageThresholdPct))
+                .toList();
+
+        log.info("[ChunkedFetch] {} — covered chunks: {}, missing chunks to fetch: {}",
+                symbol, chunks.size() - missingChunks.size(), missingChunks.size());
+
+        if (missingChunks.isEmpty()) {
+            log.info("[ChunkedFetch] {} — requested window already present in DB. Skipping NSE fetch.", symbol);
+            if (merged.isEmpty()) {
+                return Mono.empty();
+            }
+            return Mono.just(StockHistory.builder()
+                    .key(StockHistoryKey.builder().key(symbol).build())
+                    .stockHistoryDetails(merged)
+                    .build());
+        }
+
+        return Flux.fromIterable(missingChunks)
                 .concatMap(chunk -> {
                     String chunkFrom = chunk.getLeft().format(NSE_FMT);
                     String chunkTo   = chunk.getRight().format(NSE_FMT);
@@ -270,6 +314,7 @@ public class StockHistoryDataIntegrator {
                         log.warn("[ChunkedFetch] {} — all chunks returned empty. Nothing to save.", symbol);
                         return Mono.empty();
                     }
+
                     log.info("[ChunkedFetch] {} — saving merged {} records to Cassandra", symbol, merged.size());
                     StockHistory full = StockHistory.builder()
                             .key(StockHistoryKey.builder().key(symbol).build())
@@ -277,6 +322,47 @@ public class StockHistoryDataIntegrator {
                             .build();
                     return stockHistoryDataService.save(full);
                 });
+    }
+
+    /**
+     * Considers a chunk covered when existing data has at least 75% weekday coverage.
+     * This avoids unnecessary NSE calls for tiny holiday gaps while still fetching
+     * genuinely missing chunks.
+     */
+    private static boolean isChunkCovered(TreeMap<LocalDate, StockHistoryDetails> existing,
+                                          LocalDate chunkFrom,
+                                          LocalDate chunkTo,
+                                          double thresholdPct) {
+        if (existing == null || existing.isEmpty()) {
+            return false;
+        }
+
+        NavigableMap<LocalDate, StockHistoryDetails> sub = existing.subMap(chunkFrom, true, chunkTo, true);
+        if (sub.isEmpty()) {
+            return false;
+        }
+
+        long weekdays = countWeekdays(chunkFrom, chunkTo);
+        if (weekdays <= 0) {
+            return true;
+        }
+
+        long presentWeekdays = sub.keySet().stream()
+                .filter(d -> d.getDayOfWeek() != DayOfWeek.SATURDAY && d.getDayOfWeek() != DayOfWeek.SUNDAY)
+                .count();
+
+        double coverage = (presentWeekdays * 100.0) / weekdays;
+        return coverage >= thresholdPct;
+    }
+
+    private static long countWeekdays(LocalDate from, LocalDate to) {
+        long count = 0;
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            if (d.getDayOfWeek() != DayOfWeek.SATURDAY && d.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**
