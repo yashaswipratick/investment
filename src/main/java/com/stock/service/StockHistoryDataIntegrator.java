@@ -35,6 +35,23 @@ public class StockHistoryDataIntegrator {
     @Autowired
     private SectorWiseStockDataIntegrator sectorWiseStockDataIntegrator;
 
+    /**
+     * Fetches stock history from NSE NextApi (GetQuoteApi) using cookie from cookie.txt
+     * merged with a fresh session cookie, then saves to the stock_history table.
+     *
+     * @param request must contain stockSymbol, series, from (dd-MM-yyyy), to (dd-MM-yyyy)
+     */
+    public Mono<StockHistory> fetchAndSaveFromNextApi(StockHistoryRequest request) {
+        if (request == null) {
+            log.error("Request is null. NextApi fetch skipped.");
+            return Mono.empty();
+        }
+        return entryLoader.getStockHistoryFromNextApi(request)
+                .flatMap(stockHistory -> stockHistoryDataService.save(stockHistory))
+                .doOnNext(stockHistory -> log.info("NextApi: data saved for {}. records: {}",
+                        stockHistory.getKey().getKey(), stockHistory.getStockHistoryDetails().size()));
+    }
+
     public Mono<StockHistory> fetchAndSave(StockHistoryRequest request) {
         if (request == null) {
             log.error("Provide Stock info details are wrong. Update Skipped, details: {} ", request);
@@ -53,8 +70,8 @@ public class StockHistoryDataIntegrator {
         }
 
         return fetchStockHistoryDetailsFromNSECSV(request)
-        .flatMap(stockHistory -> stockHistoryDataService.save(stockHistory))
-                .doOnNext(stockHistory -> log.info("CSV data fetched. stock: {}, count: {} ",stockHistory.getKey().getKey(), stockHistory.getStockHistoryDetails().size()));
+                .flatMap(stockHistory -> stockHistoryDataService.save(stockHistory))
+                .doOnNext(stockHistory -> log.info("CSV data fetched. stock: {}, count: {} ", stockHistory.getKey().getKey(), stockHistory.getStockHistoryDetails().size()));
     }
 
     public Mono<StockHistory> save(StockHistory details) {

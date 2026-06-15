@@ -8,6 +8,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -19,7 +22,25 @@ public class NseSessionManager {
     private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
     private static final String ACCEPT_LANGUAGE = "en-GB,en-US;q=0.9,en;q=0.8";
     private static final String ACCEPT_ENCODING = "gzip, deflate";
+    private static final String COOKIE_FILE_PATH =
+            "/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/cookie.txt";
 
+    /**
+     * Reads cookie content from cookie.txt.
+     * Returns empty string if the file is missing or empty.
+     */
+    public String readCookieFromFile() {
+        try {
+            String content = new String(Files.readAllBytes(Paths.get(COOKIE_FILE_PATH))).trim();
+            if (!content.isEmpty()) {
+                log.info("📄 Loaded cookie from file: {} chars", content.length());
+            }
+            return content;
+        } catch (IOException e) {
+            log.warn("⚠️ Could not read cookie file at {}: {}", COOKIE_FILE_PATH, e.getMessage());
+            return "";
+        }
+    }
 
     /**
      * Generates a fresh NSE session cookie by making a warm-up GET request to NSE homepage.
@@ -64,6 +85,23 @@ public class NseSessionManager {
     }
 
     /**
+     * Generates a fresh NSE session cookie and appends the contents of cookie.txt.
+     * Dynamic cookie is placed first; file cookie is appended after a semicolon.
+     */
+    public Mono<String> generateCookieWithFileAppended() {
+        return generateFreshSessionCookie().map(dynamicCookie -> {
+            String fileCookie = readCookieFromFile();
+            if (fileCookie.isEmpty()) {
+                return dynamicCookie;
+            }
+            if (dynamicCookie.isEmpty()) {
+                return fileCookie;
+            }
+            return dynamicCookie + "; " + fileCookie;
+        });
+    }
+
+    /**
      * Builds a WebClient for NSE warm-up calls (direct connection, no proxy).
      */
     private WebClient buildWebClient() {
@@ -78,5 +116,5 @@ public class NseSessionManager {
                 .defaultHeader("Accept-Encoding", ACCEPT_ENCODING)
                 .build();
     }
-}
 
+}
