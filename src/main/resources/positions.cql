@@ -1,4 +1,4 @@
-CREATE TYPE positions_stock_info (
+CREATE TYPE IF NOT EXISTS positions_stock_info (
     instrument text,
     quantity int,
     average_price_per_stock double,
@@ -12,7 +12,7 @@ CREATE TYPE positions_stock_info (
     created_date timestamp
 );
 
-CREATE TABLE positions (
+CREATE TABLE IF NOT EXISTS positions (
     key text,
     positions_stock_info_details map<text, frozen<positions_stock_info>>,
     is_active_position text,

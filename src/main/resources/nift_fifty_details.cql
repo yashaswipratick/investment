@@ -1,9 +1,9 @@
-CREATE TYPE quote_preopen_status (
+CREATE TYPE IF NOT EXISTS quote_preopen_status (
     equity_time TEXT,
     pre_open_time TEXT,
     quote_pre_open_flag BOOLEAN
 );
-CREATE TYPE meta (
+CREATE TYPE IF NOT EXISTS meta (
     symbol TEXT,
     company_name TEXT,
     industry TEXT,
@@ -52,7 +52,7 @@ CREATE TYPE IF NOT EXISTS stock_data (
     chart_today_path TEXT,
     meta FROZEN<meta>
 );
-CREATE TYPE advance (
+CREATE TYPE IF NOT EXISTS advance (
     declines TEXT,
     advances TEXT,
     unchanged TEXT

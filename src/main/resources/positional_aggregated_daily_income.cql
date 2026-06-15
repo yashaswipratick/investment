@@ -1,4 +1,4 @@
-CREATE TABLE positional_aggregated_daily_income (
+CREATE TABLE IF NOT EXISTS positional_aggregated_daily_income (
     key text,
     positioned_date date,
     basket_id text,

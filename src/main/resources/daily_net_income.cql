@@ -1,4 +1,4 @@
-CREATE TYPE positional_daily_net_income_info (
+CREATE TYPE IF NOT EXISTS positional_daily_net_income_info (
     position_date text,
     basket_id text,
     instrument text,
@@ -13,7 +13,7 @@ CREATE TYPE positional_daily_net_income_info (
     total_pnl_percentage double,
     created_date timestamp
 );
-CREATE TABLE positional_daily_net_income (
+CREATE TABLE IF NOT EXISTS positional_daily_net_income (
     key text PRIMARY KEY,
     positional_daily_net_income_info_details map<text, frozen<positional_daily_net_income_info>>,
     created_date timestamp

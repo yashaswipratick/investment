@@ -20,7 +20,7 @@ echo ""
 
 # Step 1: Cassandra
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "STEP 1️⃣ : Install Cassandra & Create Tables"
+echo "STEP 1️⃣ : Install Cassandra & Start Service"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Run this ONCE to set up Cassandra:"
@@ -28,12 +28,22 @@ echo ""
 echo "  bash $SCRIPTS_DIR/setup_cassandra.sh"
 echo ""
 echo "⏱️  Takes: 2-3 minutes"
-echo "✅ Creates: Cassandra daemon, keyspace, 12 tables/types"
+echo "✅ Creates: Cassandra daemon and ensures port 9042 is ready"
 echo ""
 
-# Step 2: Verify
+# Step 2: Apply Schema
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "STEP 2️⃣ : Verify Cassandra"
+echo "STEP 2️⃣ : Create Tables / Types in Keyspace"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Apply schema to your target keyspace:"
+echo ""
+echo "  bash $SCRIPTS_DIR/apply_cassandra_schema.sh --keyspace realtime_stock_data"
+echo ""
+
+# Step 3: Verify
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "STEP 3️⃣ : Verify Cassandra"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Check status anytime:"
@@ -41,9 +51,9 @@ echo ""
 echo "  bash $SCRIPTS_DIR/cassandra_status.sh"
 echo ""
 
-# Step 3: Fetch Data
+# Step 4: Fetch Data
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "STEP 3️⃣ : Fetch NSE Historical Data"
+echo "STEP 4️⃣ : Fetch NSE Historical Data"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Fetch data for specific symbols:"
@@ -93,6 +103,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Full guides:"
 echo "  - Cassandra: $SCRIPTS_DIR/CASSANDRA_SETUP.md"
+echo "  - Schema Apply: $SCRIPTS_DIR/apply_cassandra_schema.sh"
 echo "  - NSE Fetcher: $SCRIPTS_DIR/NSE_HISTORICAL_CURL_FETCHER.md"
 echo "  - All Scripts: $SCRIPTS_DIR/README.md"
 echo ""
@@ -116,13 +127,13 @@ echo ""
 
 echo "❓ 'Failed to resolve symbols'?"
 echo "   → Provide symbols via CLI: --symbols INFY,TCS,SBIN"
-echo "   → Or run setup_cassandra.sh first"
+echo "   → Or run setup_cassandra.sh + apply_cassandra_schema.sh first"
 echo ""
 
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║                    ✅ You're Ready!                            ║"
 echo "║                                                                ║"
-echo "║  Next: Run setup_cassandra.sh, then fetch your data!          ║"
+echo "║  Next: Run setup_cassandra.sh, apply schema, then fetch data! ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 

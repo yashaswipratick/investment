@@ -6,7 +6,8 @@ Collection of Python and shell scripts for downloading NSE historical data and m
 
 | Script | Purpose | Language |
 |--------|---------|----------|
-| [`setup_cassandra.sh`](#cassandra-setup) | Install Cassandra, create keyspace, run all CQL files | Bash |
+| [`setup_cassandra.sh`](#cassandra-setup) | Install Cassandra and make sure it is running | Bash |
+| [`apply_cassandra_schema.sh`](#cassandra-schema-apply) | Create a keyspace and apply all schema CQL files | Bash |
 | [`cassandra_status.sh`](#cassandra-status) | Check Cassandra status and keyspace info | Bash |
 | [`nse_historical_curl_fetcher.py`](#nse-curl-fetcher) | Fetch NSE historical data via curl with auto cookie | Python |
 | [`nse_historical_downloader.py`](#nse-downloader) | Alternative NSE downloader | Python |
@@ -16,9 +17,9 @@ Collection of Python and shell scripts for downloading NSE historical data and m
 
 ## 🗄️ Cassandra Setup
 
-### Quick Start: Install & Configure Cassandra
+### Quick Start: Install & Start Cassandra
 
-Automatically installs Cassandra, starts the daemon, creates the `realtime_stock_data` keyspace, and runs all 12 CQL files to create tables and types.
+Automatically installs Cassandra and starts the daemon if needed.
 
 ```bash
 bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup_cassandra.sh
@@ -27,11 +28,23 @@ bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup
 **What it does:**
 - ✅ Installs Cassandra via Homebrew (macOS)
 - ✅ Starts Cassandra daemon
-- ✅ Creates `realtime_stock_data` keyspace
-- ✅ Executes all CQL files:
-  - Types: `daily_net_income`, `positional_daily_net_income_info`, etc.
-  - Tables: `stock_description`, `stock_history`, `positions`, `sector_wise_stock_details`, etc.
-- ✅ Verifies setup
+- ✅ Waits until port `9042` is ready
+- ✅ Shows next steps and current status
+
+### Cassandra Schema Apply
+
+After Cassandra is up, create tables/types in a chosen keyspace:
+
+```bash
+bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
+  --keyspace realtime_stock_data
+```
+
+**What it does:**
+- ✅ Creates the supplied keyspace if needed
+- ✅ Executes schema CQL files in a safe fixed order
+- ✅ Verifies expected tables and types
+- ✅ Skips the conflicting backup schema file
 
 **Full Documentation:** See [`CASSANDRA_SETUP.md`](./CASSANDRA_SETUP.md)
 
@@ -172,16 +185,19 @@ python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/im
 ### 1. Full Setup (First Time)
 
 ```bash
-# 1. Install and configure Cassandra
+# 1. Install and start Cassandra
 bash ./setup_cassandra.sh
 
-# 2. Import stock descriptions (if you have EQUITY_L.csv)
+# 2. Apply schema to the target keyspace
+bash ./apply_cassandra_schema.sh --keyspace realtime_stock_data
+
+# 3. Import stock descriptions (if you have EQUITY_L.csv)
 python3 ./import_equity_l_to_cassandra.py --csv-file ~/EQUITY_L.csv
 
-# 3. Fetch historical data for specific symbols
+# 4. Fetch historical data for specific symbols
 python3 ./nse_historical_curl_fetcher.py --symbols INFY,TCS,SBIN --from-date 01-01-2025 --to-date 14-06-2026
 
-# 4. Verify data was created
+# 5. Verify data was created
 ls -lah ../src/main/resources/historical-data/
 ```
 
@@ -261,6 +277,7 @@ killall cassandra
 ## 📚 Documentation Files
 
 - [`CASSANDRA_SETUP.md`](./CASSANDRA_SETUP.md) - Complete Cassandra setup guide
+- [`apply_cassandra_schema.sh`](./apply_cassandra_schema.sh) - Apply all schema files to a chosen keyspace
 - [`NSE_HISTORICAL_CURL_FETCHER.md`](./NSE_HISTORICAL_CURL_FETCHER.md) - NSE curl fetcher detailed guide
 - [`NSE_HISTORICAL_CURL_FETCHER.md`](./NSE_HISTORICAL_CURL_FETCHER.md) - NSE downloader documentation
 
@@ -269,7 +286,7 @@ killall cassandra
 ## ✅ System Requirements
 
 - **Python 3.6+** (for data fetchers)
-- **Bash 4.0+** (for setup scripts)
+- **Bash 3.2+** (compatible with macOS default bash)
 - **macOS** (for Cassandra setup script; adapt for Linux)
 - **curl** - for HTTP requests and status checks
 - **cqlsh** - for Cassandra management (installed with Cassandra)

@@ -1,5 +1,5 @@
 -- 1. Create the UDT (User Defined Type) for StockHistoryDetails
-CREATE TYPE stock_history_details (
+CREATE TYPE IF NOT EXISTS stock_history_details (
     series text,
     stock_name text,
     open double,
@@ -19,7 +19,7 @@ CREATE TYPE stock_history_details (
 );
 
 -- 2. Create the main table using StockHistoryKey (partition key) and the UDT map
-CREATE TABLE stock_history (
+CREATE TABLE IF NOT EXISTS stock_history (
     key text PRIMARY KEY,
     stock_history_details map<date, frozen<stock_history_details>>
 );

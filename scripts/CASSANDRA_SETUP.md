@@ -1,21 +1,25 @@
 # Cassandra Setup Guide
 
-Complete automated script to install Cassandra, start it, and create all tables/types from CQL files.
+Split workflow for Cassandra: one script installs/starts Cassandra, and a separate script applies tables/types from the CQL files to a chosen keyspace.
 
 ## Quick Start
 
 ```bash
 bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup_cassandra.sh
+
+bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
+  --keyspace realtime_stock_data
 ```
 
-The script will:
+The scripts will:
 1. ✅ Install Cassandra (via Homebrew on macOS)
 2. ✅ Start Cassandra daemon
-3. ✅ Create the `realtime_stock_data` keyspace
-4. ✅ Execute all 12 CQL files to create tables and types
-5. ✅ Verify the setup
+3. ✅ Check that Cassandra is reachable on `localhost:9042`
+4. ✅ Create the supplied keyspace
+5. ✅ Execute the ordered schema CQL files to create tables and types
+6. ✅ Verify the schema setup
 
-## What the Script Does
+## What the Scripts Do
 
 ### Step 1: Check OS
 - Verifies you're running macOS
@@ -36,12 +40,13 @@ The script will:
 - Waits up to 60 seconds for Cassandra to be ready
 - Confirms it's accepting connections
 
-### Step 5: Create Keyspace
-- Creates `realtime_stock_data` keyspace if it doesn't exist
+### Step 5: Apply Schema to a Keyspace
+- Run `apply_cassandra_schema.sh --keyspace <name>`
+- Creates the supplied keyspace if it doesn't exist
 - Uses SimpleStrategy with replication_factor=1 (suitable for development)
 
 ### Step 6: Execute CQL Files
-Runs all 12 CQL files in order:
+Runs the schema CQL files in a fixed order:
 1. `daily_net_income.cql` - Types and tables for daily income tracking
 2. `nift_fifty_details.cql` - Nifty 50 index details
 3. `nifty_fifty_index_stocks.cql` - Stocks in Nifty 50
@@ -52,8 +57,9 @@ Runs all 12 CQL files in order:
 8. `stock_description.cql` - Stock metadata and descriptions
 9. `stock_history.cql` - Historical stock data
 10. `stock_info_details.cql` - Stock info details
-11. `stock_info_details_bkp.cql` - Backup of stock info details
-12. `stock_overview_details.cql` - Stock overview information
+11. `stock_overview_details.cql` - Stock overview information
+
+> Note: `stock_info_details_bkp.cql` is intentionally skipped because it conflicts with `stock_info_details.cql`.
 
 ### Step 7: Verify Setup
 - Confirms the keyspace was created
@@ -74,7 +80,7 @@ Runs all 12 CQL files in order:
 
 ## CQL Files Processed
 
-The script processes 12 CQL files from:
+The script processes the schema CQL files from:
 ```
 /Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/
 ```
@@ -88,11 +94,15 @@ These files create:
 ### Full Setup (Recommended)
 ```bash
 bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup_cassandra.sh
+
+bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
+  --keyspace realtime_stock_data
 ```
 
 ### Run with Debug Output
 ```bash
 bash -x /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/setup_cassandra.sh
+bash -x /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh --keyspace realtime_stock_data
 ```
 
 ### Manual Steps (if needed)
@@ -108,6 +118,12 @@ Connect with cqlsh:
 cqlsh localhost 9042
 ```
 
+Execute the full schema:
+```bash
+bash /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/apply_cassandra_schema.sh \
+  --keyspace realtime_stock_data
+```
+
 Execute a single CQL file:
 ```bash
 cqlsh -k realtime_stock_data -f /path/to/file.cql localhost 9042
@@ -115,13 +131,13 @@ cqlsh -k realtime_stock_data -f /path/to/file.cql localhost 9042
 
 ## Configuration
 
-Edit these variables in the script if you need to change them:
+Edit these variables in the scripts if you need to change them:
 
 ```bash
 CASSANDRA_HOST="localhost"      # Cassandra server address
 CASSANDRA_PORT="9042"           # Cassandra CQL port
-KEYSPACE="realtime_stock_data"  # Keyspace name to create
-CQL_DIR="..."                   # Path to CQL files
+KEYSPACE="realtime_stock_data"  # Keyspace name to create (schema script)
+CQL_DIR="..."                   # Path to CQL files (schema script)
 ```
 
 ## Troubleshooting
@@ -343,7 +359,7 @@ A: Yes! The script uses `CREATE ... IF NOT EXISTS`, so it's idempotent.
 A: Initial installation is ~500MB. Data size depends on your dataset.
 
 **Q: Can I use a different keyspace name?**  
-A: Yes, edit `KEYSPACE="realtime_stock_data"` in the script.
+A: Yes, pass it at runtime: `bash apply_cassandra_schema.sh --keyspace my_keyspace`.
 
 **Q: Does this work on Linux?**  
 A: This script is macOS-only. For Linux, install Cassandra manually or adapt the script.
@@ -354,6 +370,7 @@ A: Yes, edit `CASSANDRA_PORT="9042"` in the script. Also update `cassandra.yaml`
 ## See Also
 
 - [Cassandra Official Documentation](https://cassandra.apache.org/doc/)
+- [apply_cassandra_schema.sh](./apply_cassandra_schema.sh) - Apply tables/types to a chosen keyspace
 - [nse_historical_curl_fetcher.py](./nse_historical_curl_fetcher.py) - Data fetcher that uses this Cassandra setup
 - [NSE_HISTORICAL_CURL_FETCHER.md](./NSE_HISTORICAL_CURL_FETCHER.md) - NSE data fetcher documentation
 
