@@ -1,14 +1,13 @@
 package com.stock.service;
 
 import com.stock.dto.NiftyIndexStockDetails;
-import com.stock.dto.StockInfoDetails;
+import com.stock.entryloader.StockInfoHttpEntryLoader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Service
 public class FetchNiftyFiftyIndexSTockDetailsService {

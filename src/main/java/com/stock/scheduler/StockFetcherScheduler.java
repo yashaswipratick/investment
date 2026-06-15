@@ -1,32 +1,23 @@
 package com.stock.scheduler;
 
-import com.datastax.oss.driver.shaded.guava.common.collect.Maps;
 import com.stock.dto.StockInfoDTO;
 import com.stock.dto.StockInfoDetails;
-import com.stock.repository.PositionsRepository;
 import com.stock.service.PositionsService;
 import com.stock.service.StockDescriptionService;
 import com.stock.service.StockDetailsService;
-import com.stock.service.StockInfoHttpEntryLoader;
+import com.stock.entryloader.StockInfoHttpEntryLoader;
 import com.stock.util.Test;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.MapUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.QueryTimeoutException;
-import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.retry.Retry;
 
 import java.io.IOException;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service

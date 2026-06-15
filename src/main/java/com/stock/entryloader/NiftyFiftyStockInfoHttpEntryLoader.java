@@ -1,4 +1,4 @@
-package com.stock.service;
+package com.stock.entryloader;
 
 import com.datastax.oss.driver.shaded.guava.common.collect.Maps;
 import com.fasterxml.jackson.databind.DeserializationFeature;
