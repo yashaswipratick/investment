@@ -2,7 +2,6 @@ package com.stock.stock_analyser.service;
 
 import com.stock.dto.StockHistory;
 import com.stock.dto.StockHistoryDetails;
-import com.stock.dto.StockHistoryRequest;
 import com.stock.dto.key.StockHistoryKey;
 import com.stock.service.StockHistoryDataIntegrator;
 import com.stock.service.StockHistoryDataService;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
@@ -60,13 +58,13 @@ public class StockAnalyserService {
     // Calendar days = trading days × 1.4 (accounts for weekends + holidays)
     private static final double CALENDAR_MULTIPLIER = 1.4;
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
     private final StockHistoryDataService    stockHistoryDataService;
     private final StockHistoryDataIntegrator stockHistoryDataIntegrator;
     private final TechnicalIndicatorEngine   technicalEngine;
     private final InvestmentSignalEngine     signalEngine;
     private final OpenAiCommentaryService    openAiService;
+    private final StockAnalysisResultPersistenceService analysisResultPersistenceService;
 
     public Mono<StockAnalysisResult> analyse(StockAnalysisRequest request) {
         if (request == null || request.getSymbol() == null || request.getSymbol().isBlank()) {
@@ -105,7 +103,8 @@ public class StockAnalyserService {
                     log.info("No data in Cassandra for {}. Auto-fetching in 3-month chunks.", symbol);
                     return autoFetchChunked(symbol, lookbackDays);
                 }))
-                .flatMap(stockHistory -> runAnalysis(stockHistory, symbol, request.isIncludeAiCommentary()));
+                .flatMap(stockHistory -> runAnalysis(stockHistory, symbol, request.isIncludeAiCommentary()))
+                .flatMap(analysisResultPersistenceService::persist);
     }
 
     /**
@@ -152,7 +151,6 @@ public class StockAnalyserService {
         // Required start dates for each tier (calculated backwards from today)
         LocalDate requiredFull        = requiredFromDate(FULL_TRADING_DAYS);
         LocalDate requiredRecommended = requiredFromDate(RECOMMENDED_TRADING_DAYS);
-        LocalDate requiredReliable    = requiredFromDate(RELIABLE_TRADING_DAYS);
         LocalDate requiredMinimum     = requiredFromDate(MINIMUM_TRADING_DAYS);
 
         // ── Window status ────────────────────────────────────────────────────
