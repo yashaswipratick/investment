@@ -1,0 +1,139 @@
+{
+	"info": {
+		"_postman_id": "690d87af-20da-45f6-ba0b-9ea1906cd1ed",
+		"name": "stock-history",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "2733659",
+		"_collection_link": "https://winter-capsule-787639.postman.co/workspace/stock-investment~3ef6bd59-19a2-4452-9477-9807c9128881/collection/2733659-690d87af-20da-45f6-ba0b-9ea1906cd1ed?action=share&source=collection_link&creator=2733659"
+	},
+	"item": [
+		{
+			"name": "fetchStockHistoryLocally",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"stockSymbol\": \"INFY\",\n    \"series\": \"EQ\",\n    \"from\": \"22-02-2025\",\n    \"to\": \"23-08-2025\",\n    \"numOfDays\": 250\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/stockHistoryDetail",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"stockHistoryDetail"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "fetchStockHistoryLocallyCSV",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"stockSymbol\": \"Banks\",\n    \"series\": \"EQ\",\n    \"from\": \"01-10-2024\",\n    \"to\": \"21-09-2025\",\n    \"numOfDays\": 250\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/stockHistoryDetailCSV",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"stockHistoryDetailCSV"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "stockHistoryDetailsFromListOfSectors",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"stockSymbol\": \"INFY\",\n    \"series\": \"EQ\",\n    \"from\": \"22-02-2025\",\n    \"to\": \"23-08-2025\",\n    \"numOfDays\": 250\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/stockHistoryDetail",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"stockHistoryDetail"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "fetchAllRelatedStockHistoryforGivenSector",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "[\n    \"Oil\",\n    \"Gas\",\n    \"Consumable Fuels\",\n    \"Telecom - Services\",\n    \"Telecom - Equipment & Accessories\",\n    \"Realty\",\n    \"Banks\",\n    \"Healthcare Services\",\n    \"Healthcare Equipment & Supplies\",\n    \"IT - Services\",\n    \"Diversified FMCG\",\n    \"Diversified\",\n    \"Media\",\n    \"Aerospace & Defense\",\n    \"Metals & Minerals Trading\",\n    \"Ferrous Metals\",\n    \"Non - Ferrous Metals\",\n    \"Diversified Metals\",\n    \"Minerals & Mining\",\n    \"Cement & Cement Products\",\n    \"Automobiles\",\n    \"Auto Components\",\n    \n    \"Finance\",\n    \"Chemicals & Petrochemicals\",\n    \"Other Construction Materials\",\n    \"Construction\",\n    \"Power\",\n    \"Pharmaceuticals & Biotechnology\",\n    \"Consumer Durables\"\n]",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/stockHistoryDetail/Consumer Durables",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"stockHistoryDetail",
+						"Consumer Durables"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

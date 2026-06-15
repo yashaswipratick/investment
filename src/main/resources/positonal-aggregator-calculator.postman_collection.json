@@ -1,0 +1,48 @@
+{
+	"info": {
+		"_postman_id": "6e287215-d293-4c71-875c-3c6483dc76b4",
+		"name": "positonal-aggregator-calculator",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "2733659",
+		"_collection_link": "https://winter-capsule-787639.postman.co/workspace/stock-investment~3ef6bd59-19a2-4452-9477-9807c9128881/collection/2733659-6e287215-d293-4c71-875c-3c6483dc76b4?action=share&source=collection_link&creator=2733659"
+	},
+	"item": [
+		{
+			"name": "GET-daily-aggregated-pnl-percentage",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"key\": \"2024-07-24\",\n    \"positionedDate\": \"2024-07-23\",\n    \"basketId\": \"50c5e348-783a-4708-a703-d7281845a793\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/stock/investment/v1.0/positionalAggregatedDailyCalculator?forceUpdate=false",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"positionalAggregatedDailyCalculator"
+					],
+					"query": [
+						{
+							"key": "forceUpdate",
+							"value": "false"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

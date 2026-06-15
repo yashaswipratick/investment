@@ -1,0 +1,99 @@
+{
+	"info": {
+		"_postman_id": "63fe819d-b1db-4355-a957-64c3377c20b0",
+		"name": "stock-description",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "2733659",
+		"_collection_link": "https://winter-capsule-787639.postman.co/workspace/stock-investment~3ef6bd59-19a2-4452-9477-9807c9128881/collection/2733659-63fe819d-b1db-4355-a957-64c3377c20b0?action=share&source=collection_link&creator=2733659"
+	},
+	"item": [
+		{
+			"name": "Get Stock Descriptions",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": ""
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/stockDescription",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"stockDescription"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Stock Descriptions for specific key",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": ""
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/stockDescription/INFY",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"stockDescription",
+						"INFY"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Stock Descriptions New Data",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": ""
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/stockDescriptionNew",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"stockDescriptionNew"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

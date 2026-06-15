@@ -1,0 +1,112 @@
+{
+	"info": {
+		"_postman_id": "a2a3e4b1-6a8e-43f9-85e5-ce81db6058c2",
+		"name": "sector-wise-stock-details",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "2733659",
+		"_collection_link": "https://winter-capsule-787639.postman.co/workspace/stock-investment~3ef6bd59-19a2-4452-9477-9807c9128881/collection/2733659-a2a3e4b1-6a8e-43f9-85e5-ce81db6058c2?action=share&source=collection_link&creator=2733659"
+	},
+	"item": [
+		{
+			"name": "provided-sector-stock-details",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/sectorWiseStockDetails/Automobiles",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"sectorWiseStockDetails",
+						"Automobiles"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getAllSectors",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/sectors",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"sectors"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "all-sectors-stocks",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/sectorWiseStockDetailsList",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"sectorWiseStockDetailsList"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "sectors-along-with-stocks-details",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8081/stock/investment/v1.0/sectorAndStockList",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8081",
+					"path": [
+						"stock",
+						"investment",
+						"v1.0",
+						"sectorAndStockList"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
