@@ -42,7 +42,20 @@ def default_dates() -> tuple[str, str]:
 
 
 def parse_symbols_arg(raw: str) -> List[str]:
-    return [s.strip().upper() for s in raw.split(",") if s.strip()]
+    symbols = [s.strip().upper() for s in raw.split(",") if s.strip()]
+    return list(dict.fromkeys(symbols))
+
+
+def normalize_date(raw: str) -> str:
+    raw = raw.strip()
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(raw, fmt).strftime("%d-%m-%Y")
+        except ValueError:
+            continue
+    raise ValueError(
+        f"Invalid date '{raw}'. Use dd-mm-yyyy, dd/mm/yyyy, or yyyy-mm-dd format"
+    )
 
 
 def read_symbols_file(path: str) -> List[str]:
@@ -52,7 +65,7 @@ def read_symbols_file(path: str) -> List[str]:
             s = line.strip().upper()
             if s and not s.startswith("#"):
                 symbols.append(s)
-    return symbols
+    return list(dict.fromkeys(symbols))
 
 
 def get_symbols_from_cassandra(host: str, port: int, keyspace: str, table: str) -> List[str]:
@@ -144,6 +157,10 @@ def fetch_csv(symbol: str, series: str, from_date: str, to_date: str, cookie: st
         "--show-error",
         "--location",
         "--globoff",
+        "--connect-timeout",
+        "15",
+        "--max-time",
+        "45",
         url,
         "--header",
         "Accept: */*",
@@ -256,7 +273,6 @@ def main() -> int:
     parser.add_argument("--series", default="EQ", help="Series value (default: EQ)")
     parser.add_argument("--from-date", default=d_from, help="From date in dd-mm-yyyy")
     parser.add_argument("--to-date", default=d_to, help="To date in dd-mm-yyyy")
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directory for downloaded CSV files")
     parser.add_argument("--retry", type=int, default=2, help="Retries per symbol when cookie expires")
     parser.add_argument("--sleep-ms", type=int, default=120, help="Pause between symbols")
 
@@ -268,6 +284,19 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        args.from_date = normalize_date(args.from_date)
+        args.to_date = normalize_date(args.to_date)
+        from_dt = dt.datetime.strptime(args.from_date, "%d-%m-%Y").date()
+        to_dt = dt.datetime.strptime(args.to_date, "%d-%m-%Y").date()
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if from_dt > to_dt:
+        print("Invalid range: --from-date must be <= --to-date", file=sys.stderr)
+        return 2
+
+    try:
         symbols = resolve_symbols(args)
     except Exception as exc:  # noqa: BLE001
         print(f"Failed to resolve symbols: {exc}", file=sys.stderr)
@@ -277,8 +306,10 @@ def main() -> int:
         print("No symbols found to process.", file=sys.stderr)
         return 2
 
-    ensure_dir(args.output_dir)
-    print(f"Resolved {len(symbols)} symbols")
+    ensure_dir(DEFAULT_OUTPUT_DIR)
+    print(
+        f"Resolved {len(symbols)} symbols | range={args.from_date}..{args.to_date} | series={args.series}"
+    )
 
     try:
         cookie = refresh_cookie()
@@ -292,26 +323,28 @@ def main() -> int:
     for idx, symbol in enumerate(symbols, start=1):
         done = False
         err_msg = ""
+        max_attempts = args.retry + 1
 
-        for attempt in range(1, args.retry + 2):
+        for attempt in range(1, max_attempts + 1):
             try:
                 body = fetch_csv(symbol, args.series, args.from_date, args.to_date, cookie)
                 if not looks_like_csv(body):
-                    # likely cookie/session issue; refresh and retry
-                    cookie = refresh_cookie()
-                    raise RuntimeError("NSE response is not CSV (cookie may be expired)")
+                    raise RuntimeError("NSE response is not CSV (cookie/session may be expired)")
 
                 # Decode bytes to string for JSON conversion
                 csv_text = body.decode("utf-8", errors="replace")
-                out_path = save_json(args.output_dir, symbol, args.from_date, args.to_date, csv_text)
+                out_path = save_json(DEFAULT_OUTPUT_DIR, symbol, args.from_date, args.to_date, csv_text)
                 print(f"[{idx}/{len(symbols)}] OK {symbol} -> {out_path}")
                 success += 1
                 done = True
                 break
             except Exception as exc:  # noqa: BLE001
                 err_msg = str(exc)
-                if attempt <= args.retry + 0:
+                if attempt < max_attempts:
                     try:
+                        print(
+                            f"[{idx}/{len(symbols)}] RETRY {symbol} ({attempt}/{max_attempts - 1}) after error: {err_msg}"
+                        )
                         cookie = refresh_cookie()
                     except Exception:
                         pass

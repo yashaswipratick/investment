@@ -7,6 +7,7 @@ Download NSE historical stock price data using curl-style HTTP requests with aut
 - **Auto Cookie Generation**: Generates NSE session cookies inside the script (no pre-generated cookie file needed)
 - **Cookie Refresh**: Automatically refreshes expired cookies on retry
 - **JSON Output**: Converts NSE CSV response to structured JSON format with metadata
+- **Fixed Output Directory**: All files saved to `/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/historical-data/`
 - **Cassandra Integration**: Reads symbols from `realtime_stock_data.stock_description` table if symbols are not provided
 - **Flexible Symbol Input**: Accept symbols via CLI, file, or auto-load from Cassandra
 - **Batch Processing**: Downloads data for multiple symbols with configurable pause between requests
@@ -33,13 +34,12 @@ curl --version
 
 ### Scenario 1: Auto-load symbols from Cassandra (Default)
 
-Reads all symbols from `realtime_stock_data.stock_description` table and downloads CSV for each symbol:
+Reads all symbols from `realtime_stock_data.stock_description` table and downloads historical data for each symbol. Files are saved to `/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/historical-data/`
 
 ```bash
 python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/nse_historical_curl_fetcher.py
 ```
 
-**Output**: CSV files saved to `/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/historical-data/`
 
 ### Scenario 2: Provide symbols via CLI (Comma-separated)
 
@@ -84,13 +84,6 @@ python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/ns
   --table stock_description
 ```
 
-### Scenario 6: Custom output directory
-
-```bash
-python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/nse_historical_curl_fetcher.py \
-  --symbols INFY,TCS \
-  --output-dir /tmp/nse_data
-```
 
 ## Command-line Options
 
@@ -113,9 +106,6 @@ python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/ns
 --to-date TO_DATE
     End date in dd-mm-yyyy format (default: today)
 
---output-dir OUTPUT_DIR
-    Directory to save CSV files
-    (default: /Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/historical-data)
 
 --retry RETRY
     Number of retries per symbol when request fails (default: 2)
@@ -243,6 +233,30 @@ python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/ns
   --sleep-ms 150
 ```
 
+### Download multiple symbols with custom date range and retry settings
+
+Downloads historical data for INFY, TCS, and SBIN from January 1, 2025 to June 14, 2026 with 2 retries and 120ms pause between symbols:
+
+```bash
+python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/nse_historical_curl_fetcher.py \
+  --symbols INFY,TCS,SBIN \
+  --from-date 01-01-2025 \
+  --to-date 14-06-2026 \
+  --retry 2 \
+  --sleep-ms 120
+```
+
+### Download from symbols file with yyyy-mm-dd date format
+
+Reads symbols from a file and accepts date in `yyyy-mm-dd` format (auto-converted to dd-mm-yyyy internally):
+
+```bash
+python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/nse_historical_curl_fetcher.py \
+  --symbols-file /absolute/path/symbols.txt \
+  --from-date 2025-01-01 \
+  --to-date 2026-06-14
+```
+
 ## Troubleshooting
 
 ### Error: "Failed to resolve symbols: cqlsh failed"
@@ -266,12 +280,12 @@ python3 /Users/y0p03mn/preparation/investment-stock-market/investment/scripts/ns
 - Script will automatically retry with refreshed cookie (up to `--retry` times)
 - If still fails, NSE might be blocking the request (check IP/headers)
 
-### No CSV files created
+### No JSON files created
 
 **Cause**: Symbols list might be empty or all symbols failed  
 **Solution**:
 1. Check if symbols resolved correctly: `python3 ... --symbols INFY` (test with 1 symbol)
-2. Check output directory permissions: `ls -la /path/to/output-dir`
+2. Check output directory permissions: `ls -la /Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/historical-data`
 
 ## Performance Tips
 
