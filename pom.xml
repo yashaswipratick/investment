@@ -87,10 +87,6 @@
 			<artifactId>reactor-test</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<dependency>
-			<groupId>io.projectreactor.netty</groupId>
-			<artifactId>reactor-netty</artifactId>
-		</dependency>
 
 		<dependency>
 			<groupId>com.github.pnpninja</groupId>
@@ -179,22 +175,18 @@
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>2.1.0</version>
 		</dependency>
-		<dependency>
-			<groupId>io.netty</groupId>
-			<artifactId>netty-resolver-dns</artifactId>
-			<version>4.1.97.Final</version> <!-- Match with your Spring Boot Netty version -->
-		</dependency>
-		<dependency>
-			<groupId>io.netty</groupId>
-			<artifactId>netty-resolver-dns-native-macos</artifactId>
-			<version>4.1.97.Final</version> <!-- Match with your Spring Boot Netty version -->
-			<classifier>osx-x86_64</classifier>
-		</dependency>
 		<!-- Playwright for browser automation and cookie fetching -->
 		<dependency>
 			<groupId>com.microsoft.playwright</groupId>
 			<artifactId>playwright</artifactId>
-			<version>1.40.0</version>
+			<version>1.53.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>io.netty</groupId>
+			<artifactId>netty-resolver-dns-native-macos</artifactId>
+			<classifier>osx-aarch_64</classifier>
+			<scope>runtime</scope>
 		</dependency>
 
 	</dependencies>
