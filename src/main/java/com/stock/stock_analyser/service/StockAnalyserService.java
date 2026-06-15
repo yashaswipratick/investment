@@ -73,60 +73,62 @@ public class StockAnalyserService {
             return Mono.error(new IllegalArgumentException("Stock symbol must be provided."));
         }
 
-        String symbol = request.getSymbol().toUpperCase().trim();
-        log.info("Starting analysis for {}", symbol);
+        String symbol      = request.getSymbol().toUpperCase().trim();
+        int lookbackDays   = request.getLookbackDays() > 0 ? request.getLookbackDays() : FULL_TRADING_DAYS;
+        log.info("Starting analysis for {} — lookbackDays={}", symbol, lookbackDays);
 
         StockHistoryKey key = StockHistoryKey.builder().key(symbol).build();
 
         return stockHistoryDataService.get(key)
                 .flatMap(stockHistory -> {
-                    // Check if data covers the full 365-trading-day window
-                    LocalDate requiredFrom = requiredFromDate(FULL_TRADING_DAYS);
+                    // Check if DB data already covers the requested lookback window
+                    LocalDate requiredFrom = requiredFromDate(lookbackDays);
                     TreeMap<LocalDate, StockHistoryDetails> details = stockHistory.getStockHistoryDetails();
                     boolean hasFullCoverage = details != null
                             && !details.isEmpty()
                             && !details.firstKey().isAfter(requiredFrom);
 
                     if (hasFullCoverage) {
-                        log.info("Cassandra has full 365-trading-day coverage for {}. Skipping auto-fetch.", symbol);
+                        log.info("Cassandra already covers {}d window for {} (earliest: {}). Skipping fetch.",
+                                lookbackDays, symbol, details.firstKey());
                         return Mono.just(stockHistory);
                     }
 
-                    log.info("Cassandra data for {} does not cover 365 trading days (earliest: {}). Auto-fetching via NextApi.",
-                            symbol, details == null || details.isEmpty() ? "N/A" : details.firstKey());
-                    return autoFetchFromNextApi(symbol)
-                            .doOnNext(sh -> log.info("Auto-fetch completed for {}. records: {}",
+                    log.info("Cassandra data for {} does not cover {}d window (earliest: {}). Auto-fetching in 3-month chunks.",
+                            symbol, lookbackDays,
+                            details == null || details.isEmpty() ? "N/A" : details.firstKey());
+                    return autoFetchChunked(symbol, lookbackDays)
+                            .doOnNext(sh -> log.info("Chunked fetch done for {}. total records: {}",
                                     symbol, sh.getStockHistoryDetails().size()));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.info("No data in Cassandra for {}. Auto-fetching via NextApi.", symbol);
-                    return autoFetchFromNextApi(symbol);
+                    log.info("No data in Cassandra for {}. Auto-fetching in 3-month chunks.", symbol);
+                    return autoFetchChunked(symbol, lookbackDays);
                 }))
                 .flatMap(stockHistory -> runAnalysis(stockHistory, symbol, request.isIncludeAiCommentary()));
     }
 
     /**
-     * Builds a StockHistoryRequest for 365 trading days back from today
-     * and fetches + persists via NSE NextApi.
+     * Converts lookbackDays → calendar fromDate and delegates to the chunked
+     * NSE fetcher (3-month windows, 3-second inter-call delay).
+     *
+     * Example — lookbackDays=750:
+     *   calendarDays = round(750 × 1.4) = 1050 days back from today
+     *   chunks = 12 × 3-month windows  (Jan-Mar, Apr-Jun, …)
+     *   Each chunk = 1 NSE call with a manageable date range
      */
-    private Mono<StockHistory> autoFetchFromNextApi(String symbol) {
-        LocalDate today = LocalDate.now();
-        LocalDate fromDate = today.minusDays(Math.round(FULL_TRADING_DAYS * CALENDAR_MULTIPLIER));
+    private Mono<StockHistory> autoFetchChunked(String symbol, int lookbackDays) {
+        LocalDate today    = LocalDate.now();
+        LocalDate fromDate = today.minusDays(Math.round(lookbackDays * CALENDAR_MULTIPLIER));
 
-        StockHistoryRequest fetchRequest = StockHistoryRequest.builder()
-                .stockSymbol(symbol)
-                .series("EQ")
-                .from(fromDate.format(DATE_FMT))
-                .to(today.format(DATE_FMT))
-                .build();
+        log.info("Auto-fetching chunked data for {} | lookbackDays={} | calendarFrom={} → {}",
+                symbol, lookbackDays, fromDate, today);
 
-        log.info("Auto-fetching NextApi data for {} from {} to {}", symbol,
-                fetchRequest.getFrom(), fetchRequest.getTo());
-
-        return stockHistoryDataIntegrator.fetchAndSaveFromNextApi(fetchRequest)
+        return stockHistoryDataIntegrator.fetchChunkedFromNextApiAndSave(
+                        symbol, "EQ", fromDate, today, 3)
                 .switchIfEmpty(Mono.error(new RuntimeException(
-                        "NextApi returned no data for: " + symbol +
-                        ". The symbol may be invalid or the NSE session cookie may have expired.")));
+                        "NSE returned no data for: " + symbol +
+                        ". Symbol may be invalid or NSE session cookie may have expired.")));
     }
 
     private Mono<StockAnalysisResult> runAnalysis(StockHistory stockHistory, String symbol, boolean includeAi) {

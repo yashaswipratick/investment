@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -29,6 +30,8 @@ public class StockHistoryDataIntegrator {
 
     @Autowired
     private SectorWiseStockDataIntegrator sectorWiseStockDataIntegrator;
+
+    private static final DateTimeFormatter NSE_FMT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
     /**
      * Fetches stock history from NSE NextApi (GetQuoteApi) using cookie from cookie.txt
@@ -200,5 +203,93 @@ public class StockHistoryDataIntegrator {
                                     .build())
                             .doOnNext(details -> log.info("stock history data fetched. count: {}, details: {}, key: {} ", details.getStockHistoryDetails().size(), details, details.getKey()));
                 });
+    }
+
+    /**
+     * Fetches data for a large date range by splitting it into 3-month calendar chunks,
+     * calling NSE NextApi sequentially for each chunk with a 3-second inter-call delay,
+     * merging all results, and saving ONCE to Cassandra.
+     *
+     * This avoids sending a single massive request to NSE (e.g. 1050 calendar days)
+     * which causes very large/unreliable responses.
+     *
+     * @param symbol      NSE stock symbol
+     * @param series      e.g. "EQ"
+     * @param from        start date (inclusive)
+     * @param to          end date (inclusive)
+     * @param chunkMonths calendar-month window per NSE call (recommended: 3)
+     */
+    public Mono<StockHistory> fetchChunkedFromNextApiAndSave(
+            String symbol, String series, LocalDate from, LocalDate to, int chunkMonths) {
+
+        List<Pair<LocalDate, LocalDate>> chunks = buildCalendarChunks(from, to, chunkMonths);
+        log.info("[ChunkedFetch] {} — {} chunk(s) of {}m each | {} → {}",
+                symbol, chunks.size(), chunkMonths, from, to);
+
+        // Mutable map; safe here — single reactive chain, no concurrency
+        TreeMap<LocalDate, StockHistoryDetails> merged = new TreeMap<>();
+
+        return Flux.fromIterable(chunks)
+                .concatMap(chunk -> {
+                    String chunkFrom = chunk.getLeft().format(NSE_FMT);
+                    String chunkTo   = chunk.getRight().format(NSE_FMT);
+                    log.info("[ChunkedFetch] {} fetching chunk {} → {}", symbol, chunkFrom, chunkTo);
+
+                    StockHistoryRequest req = StockHistoryRequest.builder()
+                            .stockSymbol(symbol)
+                            .series(series)
+                            .from(chunkFrom)
+                            .to(chunkTo)
+                            .build();
+
+                    return entryLoader.getStockHistoryFromNextApi(req)
+                            .doOnNext(sh -> {
+                                int count = sh.getStockHistoryDetails() != null
+                                        ? sh.getStockHistoryDetails().size() : 0;
+                                log.info("[ChunkedFetch] {} chunk {} → {} got {} records",
+                                        symbol, chunkFrom, chunkTo, count);
+                                if (sh.getStockHistoryDetails() != null) {
+                                    merged.putAll(sh.getStockHistoryDetails());
+                                }
+                            })
+                            .onErrorResume(err -> {
+                                log.error("[ChunkedFetch] {} chunk {} → {} failed: {}",
+                                        symbol, chunkFrom, chunkTo, err.getMessage());
+                                return Mono.empty();
+                            })
+                            // 3-second polite delay between NSE calls
+                            .delayElement(Duration.ofSeconds(3));
+                })
+                .collectList()
+                .flatMap(ignored -> {
+                    if (merged.isEmpty()) {
+                        log.warn("[ChunkedFetch] {} — all chunks returned empty. Nothing to save.", symbol);
+                        return Mono.empty();
+                    }
+                    log.info("[ChunkedFetch] {} — saving merged {} records to Cassandra", symbol, merged.size());
+                    StockHistory full = StockHistory.builder()
+                            .key(StockHistoryKey.builder().key(symbol).build())
+                            .stockHistoryDetails(merged)
+                            .build();
+                    return stockHistoryDataService.save(full);
+                });
+    }
+
+    /**
+     * Splits the closed interval [from, to] into consecutive chunks of
+     * {@code chunkMonths} calendar months. Returns empty list when from > to.
+     */
+    public static List<Pair<LocalDate, LocalDate>> buildCalendarChunks(
+            LocalDate from, LocalDate to, int chunkMonths) {
+        List<Pair<LocalDate, LocalDate>> chunks = new ArrayList<>();
+        if (from.isAfter(to)) return chunks;
+        LocalDate cursor = from;
+        while (!cursor.isAfter(to)) {
+            LocalDate end = cursor.plusMonths(chunkMonths).minusDays(1);
+            if (end.isAfter(to)) end = to;
+            chunks.add(Pair.of(cursor, end));
+            cursor = end.plusDays(1);
+        }
+        return chunks;
     }
 }
