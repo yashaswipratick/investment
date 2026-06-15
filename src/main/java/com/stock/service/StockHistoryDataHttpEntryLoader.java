@@ -126,7 +126,7 @@ public class StockHistoryDataHttpEntryLoader {
                 .bodyToMono(byte[].class)
                 .map(StockHistoryDataHttpEntryLoader::decodeResponse)
                 .map(String::new)
-                .map(s -> convertCSVResponseToDto(s, stockSymbol))
+                .map(s -> convertNextApiResponseToDto(s, stockSymbol))
                 .flatMap(stockHistoryDetails -> {
                     if (stockHistoryDetails.isEmpty()) {
                         log.warn("No stock history details returned from API for symbol: {}", stockSymbol);
@@ -163,6 +163,65 @@ public class StockHistoryDataHttpEntryLoader {
                 ))
                 .doOnError(e -> log.error("Stock History Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()))
                 .onErrorResume(error -> Mono.empty());
+    }
+
+    private static List<StockHistoryDetails> convertNextApiResponseToDto(String response, String stockName) {
+        if (response == null || response.isBlank()) {
+            log.warn("NextApi payload is empty for symbol: {}", stockName);
+            return new ArrayList<>();
+        }
+        String trimmed = response.trim();
+        String payloadType = trimmed.startsWith("[") ? "json-array" : "csv";
+        log.info("NextApi payload detected for {}: {}", stockName, payloadType);
+        if (trimmed.startsWith("[")) {
+            return convertNextApiJsonArrayToDto(trimmed, stockName);
+        }
+        return convertCSVResponseToDto(trimmed, stockName);
+    }
+
+    private static List<StockHistoryDetails> convertNextApiJsonArrayToDto(String jsonArrayResponse, String stockName) {
+        List<StockHistoryDetails> stockHistoryDetails = new ArrayList<>();
+        try {
+            JSONArray data = new JSONArray(jsonArrayResponse);
+            if (data.isEmpty()) {
+                log.warn("No stock history data found in NextApi JSON array response");
+                return stockHistoryDetails;
+            }
+
+            for (int i = 0; i < data.length(); i++) {
+                JSONObject row = data.getJSONObject(i);
+                String symbolFromRow = row.optString("chSymbol", stockName);
+                String timestamp = row.optString("mtimestamp", "");
+                if (timestamp.isBlank()) {
+                    continue;
+                }
+
+                StockHistoryDetails details = StockHistoryDetails.builder()
+                        .historyDate(LocalDate.parse(timestamp, DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH)))
+                        .series(row.optString("chSeries", ""))
+                        .open(row.optDouble("chOpeningPrice", 0.0))
+                        .high(row.optDouble("chTradeHighPrice", 0.0))
+                        .low(row.optDouble("chTradeLowPrice", 0.0))
+                        .prevClose(row.optDouble("chPreviousClsPrice", 0.0))
+                        .ltp(row.optDouble("chLastTradedPrice", 0.0))
+                        .close(row.optDouble("chClosingPrice", 0.0))
+                        .vwap(row.optDouble("vwap", 0.0))
+                        .fiftyTwoWeekHigh(row.optDouble("ch52WeekHighPrice", 0.0))
+                        .fiftyTwoWeekLow(row.optDouble("ch52WeekLowPrice", 0.0))
+                        .volume(String.valueOf(row.opt("chTotTradedQty")))
+                        .value(String.valueOf(row.opt("chTotTradedVal")))
+                        .totalTrades(String.valueOf(row.opt("chTotalTrades")))
+                        .stockName(symbolFromRow)
+                        .isin("NA")
+                        .build();
+                stockHistoryDetails.add(details);
+            }
+            log.info("Parsed {} stock history records from NextApi JSON response", stockHistoryDetails.size());
+            return stockHistoryDetails;
+        } catch (Exception e) {
+            log.error("Error while converting NextApi JSON array response to DTO list", e);
+            return new ArrayList<>();
+        }
     }
 
     private Mono<List<StockHistoryDetails>> fetchApiDataList(WebClient client, String url) {

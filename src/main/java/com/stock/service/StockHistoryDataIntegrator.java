@@ -47,8 +47,15 @@ public class StockHistoryDataIntegrator {
             return Mono.empty();
         }
         return entryLoader.getStockHistoryFromNextApi(request)
-                .flatMap(stockHistory -> stockHistoryDataService.save(stockHistory))
-                .doOnNext(stockHistory -> log.info("NextApi: data saved for {}. records: {}",
+                .flatMap(stockHistory -> stockHistoryDataService.save(stockHistory)
+                        .doOnNext(saved -> log.info("NextApi: data saved for {}. records: {}",
+                                saved.getKey().getKey(), saved.getStockHistoryDetails().size()))
+                        .onErrorResume(saveError -> {
+                            log.error("NextApi: save failed for {}. Returning fetched response anyway. error: {}",
+                                    stockHistory.getKey().getKey(), saveError.getMessage());
+                            return Mono.just(stockHistory);
+                        }))
+                .doOnNext(stockHistory -> log.info("NextApi: response returned for {}. records: {}",
                         stockHistory.getKey().getKey(), stockHistory.getStockHistoryDetails().size()));
     }
 
