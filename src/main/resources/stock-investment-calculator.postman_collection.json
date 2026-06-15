@@ -1,0 +1,19 @@
+{
+	"info": {
+		"_postman_id": "495f98dd-6da3-4f4c-b905-71cc47e1451a",
+		"name": "stock-investment-calculator",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "2733659",
+		"_collection_link": "https://winter-capsule-787639.postman.co/workspace/stock-investment~3ef6bd59-19a2-4452-9477-9807c9128881/collection/2733659-495f98dd-6da3-4f4c-b905-71cc47e1451a?action=share&source=collection_link&creator=2733659"
+	},
+	"item": [
+		{
+			"name": "calculator-to-buy-stock-or-not",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		}
+	]
+}
