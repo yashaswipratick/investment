@@ -2,6 +2,7 @@ package com.stock.stock_analyser.engine;
 
 import com.stock.dto.StockHistoryDetails;
 import com.stock.stock_analyser.dto.TechnicalSignals;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -24,7 +25,10 @@ import java.util.List;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class TechnicalIndicatorEngine {
+
+    private final CandlestickEngine candlestickEngine;
 
     // ─── Public entry point ────────────────────────────────────────────────────
 
@@ -183,7 +187,11 @@ public class TechnicalIndicatorEngine {
                 n > 1 ? sma(closes, 50,  n - 1) : sma50,
                 n > 1 ? sma(closes, 200, n - 1) : sma200);
 
+        // ─── Candlestick & Price-Action (deterministic) ───────────────────────
+        CandlestickSignals csSignals = candlestickEngine.analyse(candles);
+
         return TechnicalSignals.builder()
+                .candlestickSignals(csSignals)
                 .sma20(round(sma20))
                 .sma50(round(sma50))
                 .sma200(round(sma200))

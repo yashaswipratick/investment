@@ -54,6 +54,15 @@ openai:
   max-tokens-reasoning: 4000
   # Classic chat-completion models (gpt-4o, gpt-4-turbo) only produce visible tokens.
   max-tokens-classic: 600
+  # When web search is enabled, more tokens are needed: search calls + reading results + output.
+  max-tokens-with-search: 6000
+  # Enable GPT web search to fetch live fundamentals, earnings, analyst ratings and news.
+  # true  = GPT searches the web before analysing (adds ~5-15s, richer commentary)
+  # false = technical-only analysis, faster response
+  web-search-enabled: true
+  # Include only the most recent OHLCV rows in prompt for candlestick/volume context.
+  # 30 rows is a good balance (~450 tokens) vs 1Y data (~3,700+ tokens).
+  prompt-ohlcv-max-rows: 30
 
 springfox:
   documentation:

@@ -1,5 +1,6 @@
 package com.stock.stock_analyser.dto;
 
+import com.stock.stock_analyser.engine.CandlestickSignals;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -80,6 +81,14 @@ public class TechnicalSignals {
      * Included in API response so clients know which window the change covers.
      */
     private String priceChangePeriodLabel;
+
+    // ── Candlestick & Price-Action (deterministic, computed in Java) ─────────
+    /**
+     * Deterministically computed candlestick patterns, gap signals, momentum and
+     * volume confirmation from the last 1-3 candles.
+     * Computed by CandlestickEngine — no probabilistic inference.
+     */
+    private CandlestickSignals candlestickSignals;
 
     // ── Signal Summaries ─────────────────────────────────────────────────────
     private String rsiSignal;       // OVERSOLD | NEUTRAL | OVERBOUGHT

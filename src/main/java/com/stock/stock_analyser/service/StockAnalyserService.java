@@ -312,7 +312,7 @@ public class StockAnalyserService {
                     projections, entryTiming, stopLossStrategy, dataNote));
         }
 
-        return openAiService.generateCommentary(symbol + " [" + periodLabel + "]", technical, recommendation)
+        return openAiService.generateCommentary(symbol + " [" + periodLabel + "]", technical, recommendation, candles)
                 .map(commentary -> {
                     recommendation.setAiCommentary(commentary);
                     return buildResult(symbol, periodLabel, total, dataFrom, dataTo,

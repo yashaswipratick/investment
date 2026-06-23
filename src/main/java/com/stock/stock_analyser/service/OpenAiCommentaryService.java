@@ -2,6 +2,7 @@ package com.stock.stock_analyser.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stock.dto.StockHistoryDetails;
 import com.stock.stock_analyser.dto.InvestmentRecommendation;
 import com.stock.stock_analyser.dto.TechnicalSignals;
 import io.netty.handler.ssl.SslContext;
@@ -25,8 +26,11 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -76,6 +80,25 @@ public class OpenAiCommentaryService {
      */
     @Value("${openai.max-tokens-classic:600}")
     private int maxTokensClassic;
+
+    /**
+     * Enable GPT web search to fetch live fundamentals, earnings, analyst ratings and news.
+     * When true, GPT autonomously searches the web before generating commentary.
+     * Adds ~5–15s latency and small additional cost per call.
+     * Default: true. Set false to skip web search (faster, technical-only analysis).
+     */
+    @Value("${openai.web-search-enabled:true}")
+    private boolean webSearchEnabled;
+
+    /**
+     * When web search is enabled, increase token limit further to accommodate
+     * search results + reasoning + output. Default: 6000.
+     */
+    @Value("${openai.max-tokens-with-search:6000}")
+    private int maxTokensWithSearch;
+
+    @Value("${openai.prompt-ohlcv-max-rows:30}")
+    private int promptOhlcvMaxRows;
 
     private String resolvedApiKey = "";
     private boolean apiKeyValid = false;
@@ -176,13 +199,14 @@ public class OpenAiCommentaryService {
     }
 
     public Mono<String> generateCommentary(String symbol, TechnicalSignals technical,
-                                           InvestmentRecommendation recommendation) {
+                                           InvestmentRecommendation recommendation,
+                                           List<StockHistoryDetails> periodCandles) {
         if (resolvedApiKey.isBlank() || !apiKeyValid) {
             log.info("OpenAI API key unavailable/invalid. Skipping AI commentary for {}", symbol);
             return Mono.just("");
         }
 
-        String prompt = buildPrompt(symbol, technical, recommendation);
+        String prompt = buildPrompt(symbol, technical, recommendation, periodCandles);
         log.debug("[OpenAI][{}] Sending prompt to {} (model={}, serviceTier={}):\n{}",
                   symbol, OPENAI_URL, modelName, serviceTier, prompt);
 
@@ -192,13 +216,27 @@ public class OpenAiCommentaryService {
                 Map.of("role", "system", "content", buildSystemPrompt()),
                 Map.of("role", "user",   "content", prompt)
         ));
-        // Reasoning models (gpt-5, o-series) consume hidden "thinking" tokens
-        // BEFORE generating the visible response. Those internal tokens count
-        // against max_output_tokens, leaving little room for the actual commentary.
-        // Use a much higher limit for reasoning models so the 4-section output fits.
-        int maxTokens = isReasoningModel(modelName) ? maxTokensReasoning : maxTokensClassic;
+        // ── Web search tool ───────────────────────────────────────────────────
+        // When enabled, GPT autonomously searches for live fundamentals, earnings,
+        // analyst ratings and recent news before writing commentary.
+        // This eliminates the need to fetch external data on the server side.
+        if (webSearchEnabled) {
+            body.put("tools", List.of(Map.of("type", "web_search_preview")));
+            log.debug("[OpenAI][{}] web_search_preview tool enabled", symbol);
+        }
+
+        // ── Token limit ───────────────────────────────────────────────────────
+        // Web search needs extra tokens: search calls + reading results + reasoning + output.
+        // Without search: reasoning models need ~4000; classic models need ~600.
+        int maxTokens;
+        if (webSearchEnabled) {
+            maxTokens = maxTokensWithSearch;  // e.g. 6000 — covers search + reasoning + output
+        } else {
+            maxTokens = isReasoningModel(modelName) ? maxTokensReasoning : maxTokensClassic;
+        }
         body.put("max_output_tokens", maxTokens);
-        log.debug("[OpenAI][{}] max_output_tokens={} (reasoningModel={})", symbol, maxTokens, isReasoningModel(modelName));
+        log.debug("[OpenAI][{}] max_output_tokens={} (webSearch={}, reasoningModel={})",
+                  symbol, maxTokens, webSearchEnabled, isReasoningModel(modelName));
 
         // temperature is NOT supported by reasoning/flagship models like gpt-5, o3, o4-mini.
         // Only add it for classic chat-completion models (gpt-4o, gpt-4-turbo, gpt-3.5-turbo etc.)
@@ -306,34 +344,60 @@ public class OpenAiCommentaryService {
      * so the response is structured, factual, and actionable every time.
      */
     private String buildSystemPrompt() {
+        String searchInstructions = webSearchEnabled ? """
+
+                WEB SEARCH INSTRUCTIONS (do this BEFORE writing your analysis):
+                Use the web_search tool to gather the following live data for the stock symbol provided:
+
+                1. FUNDAMENTALS — search: "{symbol} NSE P/E ratio EPS revenue debt equity ROE 2026"
+                   Extract: P/E ratio, EPS (TTM), Revenue growth (YoY), Debt/Equity ratio, ROE
+
+                2. LATEST EARNINGS — search: "{symbol} quarterly results earnings June 2026"
+                   Extract: Last quarter revenue, profit, vs estimates, management guidance
+
+                3. ANALYST RATINGS — search: "{symbol} analyst rating target price upgrade downgrade 2026"
+                   Extract: Consensus rating (Buy/Hold/Sell), average target price, recent changes
+
+                4. CORPORATE ACTIONS — search: "{symbol} dividend bonus split buyback 2026"
+                   Extract: Any recent/upcoming dividends, bonus issues, buybacks
+
+                5. RECENT NEWS — search: "{symbol} news June 2026"
+                   Extract: Major contract wins, regulatory issues, management changes, sector developments
+
+                After searching, incorporate these findings into your 4-section analysis.
+                If a search returns no useful data, skip that item — do not hallucinate or invent data.
+                Clearly distinguish: "Technically..." (from indicators) vs "Fundamentally..." (from search).
+
+                """ : "";
+
         return """
                 You are a senior equity research analyst with 15+ years of experience in Indian equity markets (NSE/BSE).
-                Your role is to translate quantitative technical signals into clear, actionable investment commentary
-                for both retail and institutional investors.
-
+                Your role is to combine quantitative technical signals with live fundamental and news data
+                to produce clear, actionable investment commentary for retail and institutional investors.
+                """ + searchInstructions + """
                 STRICT OUTPUT FORMAT — always return exactly these 4 sections, no more, no less:
 
                 📊 TREND SUMMARY
-                One sentence describing the current price trend using the moving averages and ADX data.
+                One sentence on the current price trend (technical). One sentence on fundamental context (valuation, earnings).
 
                 🎯 ENTRY & EXIT PLAN
-                State the recommended action (BUY/HOLD/SELL/AVOID), the ideal entry price range, the stop-loss level,
-                and the profit target. Explain WHY these levels make sense given the technical data.
+                State the recommended action (BUY/HOLD/SELL/AVOID), entry price range, stop-loss, and profit target.
+                Justify with BOTH technical levels AND fundamental catalysts (e.g. upcoming earnings, analyst upgrade).
 
                 ⚠️ KEY RISKS
-                Two or three specific risks that could invalidate the bullish/bearish thesis.
-                Be concrete — mention RSI levels, volume patterns, or key support/resistance breaks.
+                Two or three specific risks — mix technical risks (RSI, support breaks) and fundamental risks
+                (earnings miss, debt concerns, regulatory issues).
 
                 💡 FINAL VERDICT
-                One clear sentence summarising whether this is a high-conviction trade or a wait-and-watch situation,
-                and what the single most important trigger to watch is.
+                One clear sentence: high-conviction or wait-and-watch, and the single most important trigger to watch
+                (could be a price level OR an upcoming event like an earnings date).
 
                 RULES:
                 - Use INR (₹) for all prices
-                - Be specific — use exact price numbers, not vague ranges
+                - Be specific — use exact price numbers and concrete facts, not vague ranges
                 - Never say "it depends" or give non-committal answers
-                - Do NOT repeat the raw indicator numbers — interpret them in plain English
-                - Total response must be under 250 words
+                - Do NOT hallucinate data — if a search found nothing, omit that point
+                - Total response must be under 300 words
                 """;
     }
 
@@ -341,7 +405,8 @@ public class OpenAiCommentaryService {
      * User prompt — provides all computed indicators in a clean, labelled format
      * so GPT has precise context without ambiguity.
      */
-    private String buildPrompt(String symbol, TechnicalSignals t, InvestmentRecommendation r) {
+    private String buildPrompt(String symbol, TechnicalSignals t, InvestmentRecommendation r,
+                               List<StockHistoryDetails> periodCandles) {
         // Price change period label (6M / 1Y / 2Y / 3Y) and value
         String changePeriod = t.getPriceChangePeriodLabel() != null ? t.getPriceChangePeriodLabel() : "6M";
         String changePct    = t.getPriceChangePct() != null
@@ -356,6 +421,8 @@ public class OpenAiCommentaryService {
         else if (t.getAdx14() > 40)    adxInterpret = "STRONG TREND";
         else if (t.getAdx14() > 25)    adxInterpret = "MODERATE TREND";
         else                           adxInterpret = "WEAK/SIDEWAYS";
+
+        String recentPriceAction = buildRecentPriceActionSection(periodCandles, promptOhlcvMaxRows);
 
         return String.format(
                 """
@@ -389,6 +456,19 @@ public class OpenAiCommentaryService {
                   Support Level   : ₹%.2f
                   Resistance Level: ₹%.2f
 
+                CANDLESTICK & PRICE-ACTION SIGNALS (computed deterministically)
+                  Patterns Detected : %s
+                  Gap Signals       : %s
+                  5-Day Momentum    : %s%%
+                  10-Day Momentum   : %s%%
+                  Volume Confirmation: %s
+                  Volume Trend (10d): %s
+                  Inside Bar        : %s
+
+                RECENT PRICE ACTION (last %d days, newest first)
+                Date | Open | High | Low | Close | Volume
+                %s
+
                 ALGORITHMIC RECOMMENDATION
                   Action          : %s
                   Confidence Score: %d / 100
@@ -415,6 +495,17 @@ public class OpenAiCommentaryService {
                 nullStr(t.getTrendDirection()),
                 safe(t.getBbUpper()), safe(t.getBbMiddle()), safe(t.getBbLower()), nullStr(t.getBbSignal()),
                 safe(t.getSupportLevel()), safe(t.getResistanceLevel()),
+                // Candlestick signals
+                t.getCandlestickSignals() != null && !t.getCandlestickSignals().getCandlestickPatterns().isEmpty()
+                        ? String.join(", ", t.getCandlestickSignals().getCandlestickPatterns()) : "None detected",
+                t.getCandlestickSignals() != null && !t.getCandlestickSignals().getGapSignals().isEmpty()
+                        ? String.join(", ", t.getCandlestickSignals().getGapSignals()) : "No gaps",
+                t.getCandlestickSignals() != null ? t.getCandlestickSignals().getMomentum5dPct() : 0,
+                t.getCandlestickSignals() != null ? t.getCandlestickSignals().getMomentum10dPct() : 0,
+                t.getCandlestickSignals() != null ? nullStr(t.getCandlestickSignals().getVolumeConfirmation()) : "N/A",
+                t.getCandlestickSignals() != null ? nullStr(t.getCandlestickSignals().getVolumeTrend10d()) : "N/A",
+                t.getCandlestickSignals() != null && t.getCandlestickSignals().isInsideBar() ? "YES (consolidation)" : "No",
+                Math.max(1, promptOhlcvMaxRows), recentPriceAction,
                 r.getAction(), r.getConfidenceScore(),
                 safe(r.getEntryPriceLow()), safe(r.getEntryPriceHigh()),
                 safe(r.getTargetPrice()), safe(r.getPotentialUpsidePct()),
@@ -422,6 +513,47 @@ public class OpenAiCommentaryService {
                 safe(r.getRiskRewardRatio()),
                 r.getRationale() != null ? shrink(r.getRationale(), 400) : "N/A"
         );
+    }
+
+    private String buildRecentPriceActionSection(List<StockHistoryDetails> candles, int maxRows) {
+        if (candles == null || candles.isEmpty()) {
+            return "N/A (no recent OHLCV candles available)";
+        }
+
+        int cap = Math.max(1, maxRows);
+        int end = candles.size();
+        int start = Math.max(0, end - cap);
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        List<String> rows = new ArrayList<>();
+
+        // Stored as oldest->newest; emit newest first to highlight near-term momentum/patterns.
+        for (int i = end - 1; i >= start; i--) {
+            StockHistoryDetails c = candles.get(i);
+            rows.add(String.format(Locale.ENGLISH,
+                    "%s | %.2f | %.2f | %.2f | %.2f | %s",
+                    c.getHistoryDate() != null ? c.getHistoryDate().format(fmt) : "N/A",
+                    safe(c.getOpen()),
+                    safe(c.getHigh()),
+                    safe(c.getLow()),
+                    safe(c.getClose()),
+                    compactVolume(c.getVolume())));
+        }
+
+        return String.join("\n", rows);
+    }
+
+    private String compactVolume(String volume) {
+        if (volume == null || volume.isBlank()) return "N/A";
+        String cleaned = volume.replace(",", "").trim();
+        try {
+            double v = Double.parseDouble(cleaned);
+            if (v >= 1_000_000_000d) return String.format(Locale.ENGLISH, "%.2fB", v / 1_000_000_000d);
+            if (v >= 1_000_000d)     return String.format(Locale.ENGLISH, "%.2fM", v / 1_000_000d);
+            if (v >= 1_000d)         return String.format(Locale.ENGLISH, "%.2fK", v / 1_000d);
+            return String.format(Locale.ENGLISH, "%.0f", v);
+        } catch (NumberFormatException ignored) {
+            return volume;
+        }
     }
 
     private Mono<String> sendResponsesRequest(Map<String, Object> body) {
