@@ -59,6 +59,24 @@ public class OpenAiCommentaryService {
     @Value("${openai.service-tier:priority}")
     private String serviceTier;
 
+    /**
+     * Max output tokens for reasoning models (gpt-5, o-series).
+     * These models consume hidden "thinking" tokens before generating visible output.
+     * Set high enough to cover both reasoning + actual commentary.
+     * Default: 4000 (safe for gpt-5 with a 4-section prompt).
+     * Configurable via openai.max-tokens-reasoning in application.yml.
+     */
+    @Value("${openai.max-tokens-reasoning:4000}")
+    private int maxTokensReasoning;
+
+    /**
+     * Max output tokens for classic chat-completion models (gpt-4o, gpt-4-turbo etc.).
+     * Default: 600 — enough for the 4-section commentary (≈250 words).
+     * Configurable via openai.max-tokens-classic in application.yml.
+     */
+    @Value("${openai.max-tokens-classic:600}")
+    private int maxTokensClassic;
+
     private String resolvedApiKey = "";
     private boolean apiKeyValid = false;
     private String apiKeyValidationMessage = "NOT_VALIDATED";
@@ -178,7 +196,7 @@ public class OpenAiCommentaryService {
         // BEFORE generating the visible response. Those internal tokens count
         // against max_output_tokens, leaving little room for the actual commentary.
         // Use a much higher limit for reasoning models so the 4-section output fits.
-        int maxTokens = isReasoningModel(modelName) ? 2000 : 600;
+        int maxTokens = isReasoningModel(modelName) ? maxTokensReasoning : maxTokensClassic;
         body.put("max_output_tokens", maxTokens);
         log.debug("[OpenAI][{}] max_output_tokens={} (reasoningModel={})", symbol, maxTokens, isReasoningModel(modelName));
 

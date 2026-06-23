@@ -17,6 +17,8 @@ import java.time.LocalDate;
 public class StockAnalysisResult {
 
     private String symbol;
+    /** Analysis period: 6M | 1Y | 2Y | 3Y */
+    private String periodLabel;
     private LocalDate analysisDate;
     private int totalDataPoints;         // Total candles used for analysis
 

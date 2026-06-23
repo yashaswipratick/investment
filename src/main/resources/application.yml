@@ -44,9 +44,16 @@ spring:
 # OpenAI API configuration
 # api-key is the file path containing the actual API key text
 openai:
-  api-key: /Users/y0p03mn/Documents/OPEN_API_KEY.txt
+  api-key: /Users/y0p03mn/Desktop/OPEN_API_KEY.txt
   model-name: gpt-5
   service-tier: priority
+  # Token limits — tune here without changing code
+  # Reasoning models (gpt-5, o1, o3, o4) consume hidden "thinking" tokens
+  # before generating visible output. Set max-tokens-reasoning high enough
+  # to cover both internal reasoning (~1500-2500 tokens) + actual output (~400 tokens).
+  max-tokens-reasoning: 4000
+  # Classic chat-completion models (gpt-4o, gpt-4-turbo) only produce visible tokens.
+  max-tokens-classic: 600
 
 springfox:
   documentation:

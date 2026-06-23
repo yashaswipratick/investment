@@ -28,9 +28,12 @@ public class StockAnalysisResultPersistenceService {
 
         LocalDate analysisDate = result.getAnalysisDate() != null ? result.getAnalysisDate() : LocalDate.now();
 
+        String periodLabel = result.getPeriodLabel() != null ? result.getPeriodLabel() : "1Y";
+
         StockAnalysisResultEntity entity = StockAnalysisResultEntity.builder()
                 .key(StockAnalysisResultKey.builder()
                         .symbol(result.getSymbol().toUpperCase().trim())
+                        .periodLabel(periodLabel)
                         .analysisDate(analysisDate)
                         .build())
                 .totalDataPoints(result.getTotalDataPoints())
@@ -46,14 +49,14 @@ public class StockAnalysisResultPersistenceService {
                 .build();
 
         // Log the full result before persisting so it's visible in logs even if Cassandra fails
-        log.info("[PERSIST][{}] About to persist analysis result:\n" +
+        log.info("[PERSIST][{} | {}] About to persist analysis result:\n" +
                  "  Window    : {} | {}\n" +
                  "  Data Range: {} → {} ({} candles)\n" +
                  "  Action    : {} | Confidence: {}%\n" +
                  "  Entry     : ₹{} – ₹{} | Target: ₹{} | SL: ₹{}\n" +
                  "  R/R       : {} | Upside: {}% | Downside: {}%\n" +
                  "  AI Commentary ({} chars): {}",
-                result.getSymbol(),
+                result.getSymbol(), periodLabel,
                 result.getWindowStatus(), result.getWindowMessage() != null ? result.getWindowMessage().substring(0, Math.min(80, result.getWindowMessage().length())) + "..." : "N/A",
                 result.getDataFrom(), result.getDataTo(), result.getTotalDataPoints(),
                 result.getRecommendation() != null ? result.getRecommendation().getAction()          : "N/A",
@@ -71,8 +74,8 @@ public class StockAnalysisResultPersistenceService {
         );
 
         return repository.save(entity)
-                .doOnNext(saved -> log.info("[PERSIST][{}] Successfully saved to Cassandra. analysisDate={}",
-                        saved.getKey().getSymbol(), saved.getKey().getAnalysisDate()))
+                .doOnNext(saved -> log.info("[PERSIST][{} | {}] Successfully saved to Cassandra. analysisDate={}",
+                        saved.getKey().getSymbol(), saved.getKey().getPeriodLabel(), saved.getKey().getAnalysisDate()))
                 .thenReturn(result)
                 .onErrorResume(e -> {
                     log.error("Failed to persist analysis result for symbol={}: {}", result.getSymbol(), e.getMessage());

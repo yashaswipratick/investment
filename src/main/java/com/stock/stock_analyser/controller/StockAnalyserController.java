@@ -13,6 +13,7 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Collections;
 
 /**
  * REST endpoint for stock analysis.
@@ -33,20 +34,35 @@ public class StockAnalyserController {
     private final OpenAiCommentaryService openAiCommentaryService;
 
     /**
-     * Runs full technical analysis on historical data stored in Cassandra.
+     * Runs full technical analysis for ALL applicable periods in one call.
+     *
+     * Period matrix (based on lookbackDays in the request):
+     *   lookbackDays ≥ 756  →  3Y + 2Y + 1Y + 6M
+     *   lookbackDays ≥ 504  →  2Y + 1Y + 6M
+     *   lookbackDays ≥ 252  →  1Y + 6M
+     *   lookbackDays < 252  →  6M only
+     *
+     * Response: map of period → StockAnalysisResult
+     * {
+     *   "3Y": { ... },
+     *   "2Y": { ... },
+     *   "1Y": { ... },
+     *   "6M": { ... }
+     * }
      */
     @PostMapping(value = "/analyse", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<StockAnalysisResult>> analyse(
+    public Mono<ResponseEntity<Map<String, StockAnalysisResult>>> analyse(
             @RequestBody StockAnalysisRequest request) {
 
         return analyserService.analyse(request)
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> Mono.just(ResponseEntity
                         .badRequest()
-                        .body(StockAnalysisResult.builder()
-                                .symbol(request.getSymbol())
-                                .dataNote("Error: " + e.getMessage())
-                                .build())));
+                        .body(Collections.singletonMap("error",
+                                StockAnalysisResult.builder()
+                                        .symbol(request.getSymbol())
+                                        .dataNote("Error: " + e.getMessage())
+                                        .build()))));
     }
 
     /**

@@ -18,7 +18,9 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeMap;
 
 /**
@@ -66,20 +68,34 @@ public class StockAnalyserService {
     private final OpenAiCommentaryService    openAiService;
     private final StockAnalysisResultPersistenceService analysisResultPersistenceService;
 
-    public Mono<StockAnalysisResult> analyse(StockAnalysisRequest request) {
+    /**
+     * Analyses a stock and returns results for ALL applicable periods in one call.
+     *
+     * Period matrix based on lookbackDays in the request:
+     *   lookbackDays ≥ 756  →  3Y + 2Y + 1Y + 6M  (4 results)
+     *   lookbackDays ≥ 504  →  2Y + 1Y + 6M         (3 results)
+     *   lookbackDays ≥ 252  →  1Y + 6M               (2 results)
+     *   lookbackDays < 252  →  6M only                (1 result)
+     *
+     * Each period uses only its own candle window (e.g. 2Y analysis uses last 504 candles)
+     * so indicators are computed on the relevant historical context, not the full dataset.
+     *
+     * Results are stored in Cassandra with primary key: (symbol, period_label, analysis_date).
+     * The API returns a map of period → StockAnalysisResult.
+     */
+    public Mono<Map<String, StockAnalysisResult>> analyse(StockAnalysisRequest request) {
         if (request == null || request.getSymbol() == null || request.getSymbol().isBlank()) {
             return Mono.error(new IllegalArgumentException("Stock symbol must be provided."));
         }
 
-        String symbol      = request.getSymbol().toUpperCase().trim();
-        int lookbackDays   = request.getLookbackDays() > 0 ? request.getLookbackDays() : FULL_TRADING_DAYS;
-        log.info("Starting analysis for {} — lookbackDays={}", symbol, lookbackDays);
+        String symbol    = request.getSymbol().toUpperCase().trim();
+        int lookbackDays = request.getLookbackDays() > 0 ? request.getLookbackDays() : FULL_TRADING_DAYS;
+        log.info("Starting multi-period analysis for {} — lookbackDays={}", symbol, lookbackDays);
 
         StockHistoryKey key = StockHistoryKey.builder().key(symbol).build();
 
         return stockHistoryDataService.get(key)
                 .flatMap(stockHistory -> {
-                    // Check if DB data already covers the requested lookback window
                     LocalDate requiredFrom = requiredFromDate(lookbackDays);
                     TreeMap<LocalDate, StockHistoryDetails> details = stockHistory.getStockHistoryDetails();
                     boolean hasFullCoverage = details != null
@@ -92,9 +108,7 @@ public class StockAnalyserService {
                         return Mono.just(stockHistory);
                     }
 
-                    log.info("Cassandra data for {} does not cover {}d window (earliest: {}). Auto-fetching in 3-month chunks.",
-                            symbol, lookbackDays,
-                            details == null || details.isEmpty() ? "N/A" : details.firstKey());
+                    log.info("Cassandra data for {} does not cover {}d window. Auto-fetching in 3-month chunks.", symbol, lookbackDays);
                     return autoFetchMissingChunks(symbol, lookbackDays, details)
                             .doOnNext(sh -> log.info("Chunked fetch done for {}. total records: {}",
                                     symbol, sh.getStockHistoryDetails().size()));
@@ -103,8 +117,71 @@ public class StockAnalyserService {
                     log.info("No data in Cassandra for {}. Auto-fetching in 3-month chunks.", symbol);
                     return autoFetchMissingChunks(symbol, lookbackDays, new TreeMap<>());
                 }))
-                .flatMap(stockHistory -> runAnalysis(stockHistory, symbol, lookbackDays, request.isIncludeAiCommentary()))
-                .flatMap(analysisResultPersistenceService::persist);
+                .flatMap(stockHistory ->
+                        runMultiPeriodAnalysis(stockHistory, symbol, lookbackDays, request.isIncludeAiCommentary()));
+    }
+
+    /**
+     * Determines which periods to analyse based on how much data was requested.
+     * Always includes 6M. Adds 1Y/2Y/3Y if lookbackDays is large enough.
+     *
+     * Returns a map of periodLabel → tradingDays, in descending order (3Y first).
+     */
+    private Map<String, Integer> resolvePeriods(int lookbackDays) {
+        Map<String, Integer> periods = new LinkedHashMap<>();
+        if (lookbackDays >= BARS_3Y) periods.put("3Y", BARS_3Y);
+        if (lookbackDays >= BARS_2Y) periods.put("2Y", BARS_2Y);
+        if (lookbackDays >= BARS_1Y) periods.put("1Y", BARS_1Y);
+        periods.put("6M", BARS_6M);   // always included
+        return periods;
+    }
+
+    private static final int BARS_6M = 126;
+    private static final int BARS_1Y = 252;
+    private static final int BARS_2Y = 504;
+    private static final int BARS_3Y = 756;
+
+    /**
+     * Runs analysis for each applicable period and persists all results.
+     * Each period gets its own candle slice (last N candles), so indicators
+     * reflect the relevant historical window, not the full dataset.
+     */
+    private Mono<Map<String, StockAnalysisResult>> runMultiPeriodAnalysis(
+            StockHistory stockHistory, String symbol, int lookbackDays, boolean includeAi) {
+
+        Map<String, Integer> periods = resolvePeriods(lookbackDays);
+        log.info("Running {} period(s) for {}: {}", periods.size(), symbol, periods.keySet());
+
+        List<StockHistoryDetails> allCandles = new ArrayList<>(
+                stockHistory.getStockHistoryDetails() != null
+                        ? stockHistory.getStockHistoryDetails().values()
+                        : List.of());
+
+        // Run each period sequentially (to avoid hammering OpenAI in parallel)
+        Mono<Map<String, StockAnalysisResult>> chain = Mono.just(new LinkedHashMap<>());
+
+        for (Map.Entry<String, Integer> entry : periods.entrySet()) {
+            String periodLabel = entry.getKey();
+            int tradingBars    = entry.getValue();
+
+            chain = chain.flatMap(resultMap -> {
+                // Take only the last `tradingBars` candles for this period's analysis
+                int available = allCandles.size();
+                List<StockHistoryDetails> candles = available <= tradingBars
+                        ? allCandles
+                        : allCandles.subList(available - tradingBars, available);
+
+                log.info("[{}][{}] Analysing with {} candles (requested {} bars)",
+                         symbol, periodLabel, candles.size(), tradingBars);
+
+                return runAnalysis(candles, stockHistory, symbol, periodLabel, tradingBars, includeAi)
+                        .flatMap(analysisResultPersistenceService::persist)
+                        .doOnNext(r -> resultMap.put(periodLabel, r))
+                        .thenReturn(resultMap);
+            });
+        }
+
+        return chain;
     }
 
     /**
@@ -133,27 +210,35 @@ public class StockAnalyserService {
                         ". Symbol may be invalid or NSE session cookie may have expired.")));
     }
 
-    private Mono<StockAnalysisResult> runAnalysis(StockHistory stockHistory, String symbol,
-                                                   int lookbackDays, boolean includeAi) {
+    /**
+     * Runs analysis for a specific period using the provided candle slice.
+     * Each period gets its own subset of candles (e.g. 1Y uses last 252 candles)
+     * so indicators reflect the relevant historical window.
+     */
+    private Mono<StockAnalysisResult> runAnalysis(List<StockHistoryDetails> candles,
+                                                   StockHistory stockHistory,
+                                                   String symbol,
+                                                   String periodLabel,
+                                                   int tradingBars,
+                                                   boolean includeAi) {
+        // Derive dates from the sliced candle list
         TreeMap<LocalDate, StockHistoryDetails> rawMap = stockHistory.getStockHistoryDetails();
 
-        if (rawMap == null || rawMap.isEmpty()) {
+        if (candles == null || candles.isEmpty()) {
             return Mono.just(StockAnalysisResult.builder()
-                    .symbol(symbol)
+                    .symbol(symbol).periodLabel(periodLabel)
                     .analysisDate(LocalDate.now())
                     .windowStatus("MISSING")
-                    .windowMessage("No candles found in Cassandra for " + symbol +
-                            ". Auto-fetch via NextApi was attempted but returned empty data.")
-                    .requiredFrom(requiredFromDate(RECOMMENDED_TRADING_DAYS))
+                    .windowMessage("No candles for period " + periodLabel)
                     .build());
         }
 
-        LocalDate today       = LocalDate.now();
-        LocalDate dataFrom    = rawMap.firstKey();
-        LocalDate dataTo      = rawMap.lastKey();
+        int total          = candles.size();
+        LocalDate today    = LocalDate.now();
+        // dataFrom / dataTo from the full map so window message makes sense
+        LocalDate dataFrom = rawMap != null && !rawMap.isEmpty() ? rawMap.firstKey() : today;
+        LocalDate dataTo   = rawMap != null && !rawMap.isEmpty() ? rawMap.lastKey()  : today;
 
-        // Required start dates for each tier (calculated backwards from today)
-        LocalDate requiredFull        = requiredFromDate(FULL_TRADING_DAYS);
         LocalDate requiredRecommended = requiredFromDate(RECOMMENDED_TRADING_DAYS);
         LocalDate requiredMinimum     = requiredFromDate(MINIMUM_TRADING_DAYS);
 
@@ -161,84 +246,44 @@ public class StockAnalyserService {
         String windowStatus;
         String windowMessage;
 
-        if (dataFrom.isAfter(requiredMinimum)) {
-            // Even minimum is not covered — refuse analysis
+        if (total < MINIMUM_TRADING_DAYS) {
             windowStatus  = "INSUFFICIENT";
             windowMessage = String.format(
-                "ANALYSIS BLOCKED. Minimum %d trading days of data required (from %s). " +
-                "Your data starts at %s — missing ~%d calendar days. " +
-                "Fetch earlier history via /stockHistoryFromNextApi with from=%s.",
-                MINIMUM_TRADING_DAYS, requiredMinimum,
-                dataFrom, daysBetween(dataFrom, requiredMinimum),
-                requiredMinimum.minusDays(30)  // suggest fetching slightly earlier
-            );
-
+                "[%s] ANALYSIS BLOCKED. Only %d candles available (minimum %d required).",
+                periodLabel, total, MINIMUM_TRADING_DAYS);
             return Mono.just(StockAnalysisResult.builder()
-                    .symbol(symbol)
-                    .analysisDate(today)
-                    .totalDataPoints(rawMap.size())
-                    .dataFrom(dataFrom)
-                    .dataTo(dataTo)
-                    .requiredFrom(requiredMinimum)
-                    .windowStatus(windowStatus)
-                    .windowMessage(windowMessage)
+                    .symbol(symbol).periodLabel(periodLabel).analysisDate(today)
+                    .totalDataPoints(total).dataFrom(dataFrom).dataTo(dataTo)
+                    .requiredFrom(requiredMinimum).windowStatus(windowStatus).windowMessage(windowMessage)
                     .recommendation(InvestmentRecommendation.builder()
-                            .action("NO_DATA")
-                            .rationale("Insufficient data. " + windowMessage)
-                            .build())
+                            .action("NO_DATA").rationale("Insufficient data. " + windowMessage).build())
                     .build());
-
-        } else if (dataFrom.isAfter(requiredRecommended)) {
-            // Partial — between reliable (60d) and recommended (200d)
+        } else if (total < RECOMMENDED_TRADING_DAYS) {
             windowStatus  = "PARTIAL";
             windowMessage = String.format(
-                "PARTIAL data: SMA200 unavailable. " +
-                "Data available from %s (%d candles). " +
-                "For full SMA200 analysis, need data from %s (≈%d more calendar days). " +
-                "Fetch earlier data to unlock all indicators.",
-                dataFrom, rawMap.size(),
-                requiredRecommended, daysBetween(dataFrom, requiredRecommended)
-            );
-        } else if (dataFrom.isAfter(requiredFull)) {
-            windowStatus  = "FULL";
-            windowMessage = String.format(
-                "Good coverage: %d candles from %s to %s. " +
-                "For extended 2-year analysis, fetch data from %s.",
-                rawMap.size(), dataFrom, dataTo, requiredFull
-            );
+                "[%s] PARTIAL: %d candles available. SMA200 unavailable (needs %d candles).",
+                periodLabel, total, RECOMMENDED_TRADING_DAYS);
         } else {
             windowStatus  = "FULL";
             windowMessage = String.format(
-                "Excellent coverage: %d candles from %s to %s. All indicators fully computed.",
-                rawMap.size(), dataFrom, dataTo
-            );
+                "[%s] Full coverage: %d candles. All indicators computed.", periodLabel, total);
         }
 
-        // ── Use ALL available candles ────────────────────────────────────────
-        List<StockHistoryDetails> candles = new ArrayList<>(rawMap.values());
-        int total = candles.size();
-        log.info("Analysing {} — {} candles from {} to {} | windowStatus={}",
-                 symbol, total, dataFrom, dataTo, windowStatus);
+        log.info("[{}][{}] Analysing {} candles | windowStatus={}", symbol, periodLabel, total, windowStatus);
 
-        // Compute technical indicators
-        TechnicalSignals technical = technicalEngine.compute(candles, lookbackDays);
-
-        // Generate recommendation
+        TechnicalSignals technical = technicalEngine.compute(candles, tradingBars);
         InvestmentRecommendation recommendation = signalEngine.recommend(technical);
-
-        // Append window note to data note
         String dataNote = buildDataNote(total, dataFrom, dataTo);
 
         if (!includeAi) {
-            return Mono.just(buildResult(symbol, total, dataFrom, dataTo,
+            return Mono.just(buildResult(symbol, periodLabel, total, dataFrom, dataTo,
                     requiredRecommended, windowStatus, windowMessage, technical, recommendation, dataNote));
         }
 
-        // Fetch AI commentary and attach
-        return openAiService.generateCommentary(symbol, technical, recommendation)
+        return openAiService.generateCommentary(symbol + " [" + periodLabel + "]", technical, recommendation)
                 .map(commentary -> {
                     recommendation.setAiCommentary(commentary);
-                    return buildResult(symbol, total, dataFrom, dataTo,
+                    return buildResult(symbol, periodLabel, total, dataFrom, dataTo,
                             requiredRecommended, windowStatus, windowMessage, technical, recommendation, dataNote);
                 });
     }
@@ -258,7 +303,7 @@ public class StockAnalyserService {
         return java.time.temporal.ChronoUnit.DAYS.between(earlier, later);
     }
 
-    private StockAnalysisResult buildResult(String symbol, int total,
+    private StockAnalysisResult buildResult(String symbol, String periodLabel, int total,
                                             LocalDate dataFrom, LocalDate dataTo,
                                             LocalDate requiredFrom,
                                             String windowStatus, String windowMessage,
@@ -267,6 +312,7 @@ public class StockAnalyserService {
                                             String dataNote) {
         return StockAnalysisResult.builder()
                 .symbol(symbol)
+                .periodLabel(periodLabel)
                 .analysisDate(LocalDate.now())
                 .totalDataPoints(total)
                 .dataFrom(dataFrom)

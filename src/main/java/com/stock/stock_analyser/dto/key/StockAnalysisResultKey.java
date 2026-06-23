@@ -22,7 +22,11 @@ public class StockAnalysisResultKey {
     @PrimaryKeyColumn(type = PrimaryKeyType.PARTITIONED, ordinal = 0, name = "symbol")
     private String symbol;
 
-    @PrimaryKeyColumn(type = PrimaryKeyType.CLUSTERED, ordinal = 1, name = "analysis_date")
+    /** Analysis period label: 6M | 1Y | 2Y | 3Y */
+    @PrimaryKeyColumn(type = PrimaryKeyType.CLUSTERED, ordinal = 1, name = "period_label")
+    private String periodLabel;
+
+    @PrimaryKeyColumn(type = PrimaryKeyType.CLUSTERED, ordinal = 2, name = "analysis_date")
     private LocalDate analysisDate;
 }
 
