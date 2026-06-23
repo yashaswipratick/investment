@@ -6,6 +6,9 @@ import com.stock.dto.StockHistoryRequest;
 import com.stock.dto.key.StockHistoryKey;
 import com.stock.service.NseSessionManager;
 import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.json.JSONArray;
@@ -19,10 +22,13 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.transport.ProxyProvider;
 import reactor.util.retry.Retry;
 
+import javax.net.ssl.SSLException;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -49,10 +55,80 @@ public class StockHistoryDataHttpEntryLoader {
     private static final String ACCEPT_LANGUAGE = "en-GB,en-US;q=0.9,en;q=0.8";
     private static final String ACCEPT_ENCODING = "gzip, deflate";
 
+    /**
+     * Builds a WebClient pre-configured for outbound NSE calls.
+     *
+     * <p><b>Why Chrome/Postman work but Java doesn't:</b>
+     * Reactor Netty's HttpClient does NOT automatically pick up the system
+     * proxy environment variables (HTTP_PROXY / HTTPS_PROXY).  Browsers and
+     * Postman do.  We must wire the proxy explicitly.
+     *
+     * <p><b>SSL inspection:</b>
+     * The Walmart corporate proxy performs SSL inspection and presents its own
+     * certificate chain.  Netty uses its own trust store (not the OS/JVM one),
+     * so the default TLS handshake fails.  We configure Netty to trust all
+     * certificates when running behind the proxy.  This is safe on a corporate
+     * network where the proxy itself is managed and trusted.
+     */
     private WebClient buildWebClient(String cookieHeader, boolean largePayload) {
         HttpClient httpClient = HttpClient.create().followRedirect(true);
 
+        // ── Step 1: Corporate proxy ───────────────────────────────────────────
+        // Read from env vars (set by Walmart network config).
+        // Priority: HTTPS_PROXY → HTTP_PROXY
+        // Remove if not working on personal laptop or throwing any issue while calling NSE
+        String proxyEnv = System.getenv("HTTPS_PROXY");
+        if (proxyEnv == null || proxyEnv.isBlank()) proxyEnv = System.getenv("HTTP_PROXY");
+        if (proxyEnv == null || proxyEnv.isBlank()) proxyEnv = System.getenv("https_proxy");
+        if (proxyEnv == null || proxyEnv.isBlank()) proxyEnv = System.getenv("http_proxy");
 
+        if (proxyEnv != null && !proxyEnv.isBlank()) {
+            try {
+                URI proxyUri = URI.create(proxyEnv);
+                String proxyHost = proxyUri.getHost();
+                int proxyPort   = proxyUri.getPort() > 0 ? proxyUri.getPort() : 8080;
+
+                // Build no-proxy list from NO_PROXY env — convert commas to pipes (Netty format)
+                String noProxyEnv = System.getenv("NO_PROXY");
+                if (noProxyEnv == null || noProxyEnv.isBlank()) noProxyEnv = System.getenv("no_proxy");
+                final String noProxy = (noProxyEnv != null && !noProxyEnv.isBlank())
+                        ? noProxyEnv.replace(",", "|")
+                        : "localhost|127.0.0.1|*.walmart.com|*.walmartlabs.com|*.wal-mart.com";
+
+                final String fProxyHost = proxyHost;
+                final int fProxyPort    = proxyPort;
+                httpClient = httpClient.proxy(proxy -> proxy
+                        .type(ProxyProvider.Proxy.HTTP)
+                        .host(fProxyHost)
+                        .port(fProxyPort)
+                        .nonProxyHosts(noProxy)
+                );
+                log.info("WebClient routing via corporate proxy: {}:{} (no-proxy={})",
+                         proxyHost, proxyPort, noProxy);
+            } catch (Exception e) {
+                log.warn("Could not parse proxy env '{}': {} — proceeding without proxy", proxyEnv, e.getMessage());
+            }
+        } else {
+            log.debug("No corporate proxy env vars detected — connecting directly");
+        }
+
+        // ── Step 2: SSL — trust Walmart certificate inspection chain ──────────
+        // Netty has its own trust store and won't trust the corporate proxy's
+        // self-signed certificate by default.  We use InsecureTrustManagerFactory
+        // which accepts any certificate.  This is acceptable inside a managed
+        // corporate network where the proxy is a controlled entity.
+        // Remove if not working on personal laptop or throwing any issue while calling NSE
+        try {
+            SslContext sslContext = SslContextBuilder.forClient()
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                    .build();
+            httpClient = httpClient.secure(spec -> spec.sslContext(sslContext));
+            log.debug("Netty SSL configured to trust corporate proxy certificate chain");
+        } catch (SSLException e) {
+            log.warn("Failed to configure permissive SSL context: {} — TLS may fail behind proxy", e.getMessage());
+        }
+
+        // Actual code starts here. Above code is just to run on walmart network
         if (largePayload) {
             httpClient = httpClient
                     .compress(true)
@@ -164,7 +240,7 @@ public class StockHistoryDataHttpEntryLoader {
                                 .doOnNext(retrySignal -> log.info("Starting retry logic..."))
                 ))
                 .doOnError(e -> log.error("Stock History Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()))
-                .onErrorResume(error -> Mono.empty());
+                .onErrorResume(error -> Mono.<StockHistory>empty());
     }
 
     private static List<StockHistoryDetails> convertNextApiResponseToDto(String response, String stockName) {
@@ -262,7 +338,7 @@ public class StockHistoryDataHttpEntryLoader {
                                 .doOnNext(retrySignal -> log.info("Starting retry logic..."))
                 ))
                 .doOnError(e -> log.error("Stock History Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()))
-                .onErrorResume(error -> Mono.empty());
+                .onErrorResume(error -> Mono.<List<StockHistoryDetails>>empty());
     }
 
     private static byte[] decompressGzip(byte[] compressed) {

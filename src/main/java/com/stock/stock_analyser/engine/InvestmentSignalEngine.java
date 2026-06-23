@@ -101,11 +101,23 @@ public class InvestmentSignalEngine {
             reasons.add("Price inside Bollinger Bands — consolidation zone");
         }
 
-        // ── Volume score ──────────────────────────────────────────────────────
+        // ── Volume score (5-day avg vs 20-day avg trend) ─────────────────────
+        // Primary: use the 5d/20d volume trend for a more stable signal.
+        // Secondary: use volumeSpike as a confirmation on top.
+        String vt = t.getVolumeTrend();
+        if (vt != null) {
+            switch (vt) {
+                case "RISING_STRONG" -> { score += 10; reasons.add("Volume surging (5d avg > 130% of 20d avg) — strong conviction"); }
+                case "RISING"        -> { score += 5;  reasons.add("Volume rising (5d avg > 20d avg) — buying interest growing"); }
+                case "FALLING_WEAK"  -> { score -= 10; reasons.add("Volume drying up sharply — weak conviction, possible distribution"); }
+                case "FALLING"       -> { score -= 5;  reasons.add("Volume declining (5d avg < 20d avg) — fading interest"); }
+                default              -> reasons.add("Volume neutral — no strong confirmation signal"); // NEUTRAL / N/A
+            }
+        }
+        // Volume spike on top of trend confirms direction
         if (t.isVolumeSpike()) {
-            // Volume spike confirms trend direction
-            if (score > 50) { score += 10; reasons.add("Volume spike confirms buying interest"); }
-            else             { score -= 10; reasons.add("Volume spike on downward move — selling pressure"); }
+            if (score > 50) { score += 5; reasons.add("Volume spike confirms buying interest"); }
+            else            { score -= 5; reasons.add("Volume spike on downward move — selling pressure"); }
         }
 
         // ── ADX trend strength ────────────────────────────────────────────────
@@ -133,8 +145,70 @@ public class InvestmentSignalEngine {
             }
         }
 
+        // ── Price % Change — overall trajectory over analysis period ─────────
+        // Period is determined by the request's lookbackDays (6M / 1Y / 2Y / 3Y).
+        // A positive trajectory adds confidence to a BUY; a strongly negative one
+        // warns of structural decline regardless of short-term signals.
+        String changePeriod = t.getPriceChangePeriodLabel() != null ? t.getPriceChangePeriodLabel() : "period";
+        if (t.getPriceChangePct() != null) {
+            double chg6m = t.getPriceChangePct();
+            if (chg6m > 20) {
+                score += 5;
+                reasons.add(String.format("Strong %s price trajectory: +%.1f%%", changePeriod, chg6m));
+            } else if (chg6m > 5) {
+                score += 3;
+                reasons.add(String.format("Positive %s trajectory: +%.1f%%", changePeriod, chg6m));
+            } else if (chg6m < -20) {
+                score -= 5;
+                reasons.add(String.format("Weak %s trajectory: %.1f%% — structural decline risk", changePeriod, chg6m));
+            } else if (chg6m < -5) {
+                score -= 3;
+                reasons.add(String.format("Negative %s trajectory: %.1f%%", changePeriod, chg6m));
+            } else {
+                reasons.add(String.format("Flat %s trajectory: %.1f%% — sideways consolidation", changePeriod, chg6m));
+            }
+        }
+
+        // ── VWAP confirmation ─────────────────────────────────────────────────
+        // Price above VWAP = institutional buying; below = selling pressure.
+        // Small ±5 adjustment so VWAP acts as a tiebreaker, not a dominant signal.
+        if (t.getVwap() != null && t.getVwap() > 0) {
+            if (price > t.getVwap() * 1.005) {
+                score += 5;
+                reasons.add(String.format("Price ₹%.2f above VWAP ₹%.2f — intraday buying pressure", price, t.getVwap()));
+            } else if (price < t.getVwap() * 0.995) {
+                score -= 5;
+                reasons.add(String.format("Price ₹%.2f below VWAP ₹%.2f — intraday selling pressure", price, t.getVwap()));
+            }
+        }
+
         // ── Clamp score ───────────────────────────────────────────────────────
         score = Math.max(0, Math.min(100, score));
+
+        // ── Count how many long-term signals are actually available ───────────
+        // On short windows (<60 candles), SMA200, ADX and MA-cross are null/N/A.
+        // Prevent a confident BUY/SELL from being emitted when only short-term
+        // signals (RSI + MACD + BB) are present — those alone cannot justify a
+        // high-confidence directional call.
+        boolean hasSma200   = t.getSma200() != null;
+        boolean hasAdx      = t.getAdx14()  != null;
+        boolean hasMaSignal = t.getMaSignal() != null && !"N/A".equals(t.getMaSignal());
+        int longTermSignals = (hasSma200 ? 1 : 0) + (hasAdx ? 1 : 0) + (hasMaSignal ? 1 : 0);
+
+        // Cap action at HOLD if fewer than 2 long-term signals are present
+        // so we never emit BUY/SELL purely on RSI+MACD+BB from a 35-candle window.
+        boolean sufficientContext = longTermSignals >= 2;
+        if (!sufficientContext) {
+            score = Math.min(score, 64); // caps at HOLD even if short-term signals are bullish
+            reasons.add(String.format(
+                "⚠️ Confidence capped at HOLD: only %d/3 long-term signals available " +
+                "(SMA200=%s, ADX=%s, MA-cross=%s). Fetch more history for full analysis.",
+                longTermSignals,
+                hasSma200  ? "✓" : "✗",
+                hasAdx     ? "✓" : "✗",
+                hasMaSignal? "✓" : "✗"
+            ));
+        }
 
         // ── Derive action ─────────────────────────────────────────────────────
         String action;

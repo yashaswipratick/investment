@@ -103,7 +103,7 @@ public class StockAnalyserService {
                     log.info("No data in Cassandra for {}. Auto-fetching in 3-month chunks.", symbol);
                     return autoFetchMissingChunks(symbol, lookbackDays, new TreeMap<>());
                 }))
-                .flatMap(stockHistory -> runAnalysis(stockHistory, symbol, request.isIncludeAiCommentary()))
+                .flatMap(stockHistory -> runAnalysis(stockHistory, symbol, lookbackDays, request.isIncludeAiCommentary()))
                 .flatMap(analysisResultPersistenceService::persist);
     }
 
@@ -133,7 +133,8 @@ public class StockAnalyserService {
                         ". Symbol may be invalid or NSE session cookie may have expired.")));
     }
 
-    private Mono<StockAnalysisResult> runAnalysis(StockHistory stockHistory, String symbol, boolean includeAi) {
+    private Mono<StockAnalysisResult> runAnalysis(StockHistory stockHistory, String symbol,
+                                                   int lookbackDays, boolean includeAi) {
         TreeMap<LocalDate, StockHistoryDetails> rawMap = stockHistory.getStockHistoryDetails();
 
         if (rawMap == null || rawMap.isEmpty()) {
@@ -220,7 +221,7 @@ public class StockAnalyserService {
                  symbol, total, dataFrom, dataTo, windowStatus);
 
         // Compute technical indicators
-        TechnicalSignals technical = technicalEngine.compute(candles);
+        TechnicalSignals technical = technicalEngine.compute(candles, lookbackDays);
 
         // Generate recommendation
         InvestmentRecommendation recommendation = signalEngine.recommend(technical);

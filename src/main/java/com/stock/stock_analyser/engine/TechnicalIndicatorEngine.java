@@ -28,7 +28,39 @@ public class TechnicalIndicatorEngine {
 
     // ─── Public entry point ────────────────────────────────────────────────────
 
+    // ── Period constants (trading days) ───────────────────────────────────────
+    private static final int BARS_6M = 126;
+    private static final int BARS_1Y = 252;
+    private static final int BARS_2Y = 504;
+    private static final int BARS_3Y = 756;
+
+    /**
+     * Maps a lookback request (in trading days) to the nearest standard period.
+     * @return trading-day count to use for price-change calculation
+     */
+    private int resolvePeriodBars(int lookbackDays) {
+        if (lookbackDays <= 180) return BARS_6M;
+        if (lookbackDays <= 400) return BARS_1Y;
+        if (lookbackDays <= 700) return BARS_2Y;
+        return BARS_3Y;
+    }
+
+    private String resolvePeriodLabel(int bars) {
+        if (bars <= BARS_6M) return "6M";
+        if (bars <= BARS_1Y) return "1Y";
+        if (bars <= BARS_2Y) return "2Y";
+        return "3Y";
+    }
+
+    /**
+     * Convenience overload — uses the default 1-year window for price-change calculation.
+     * Prefer {@link #compute(List, int)} when a specific lookback is known.
+     */
     public TechnicalSignals compute(List<StockHistoryDetails> candles) {
+        return compute(candles, BARS_1Y);   // default: 1-year price change
+    }
+
+    public TechnicalSignals compute(List<StockHistoryDetails> candles, int lookbackDays) {
         if (candles == null || candles.size() < 30) {
             log.warn("Not enough candles for technical analysis. Got: {}", candles == null ? 0 : candles.size());
             return TechnicalSignals.builder().build();
@@ -69,25 +101,64 @@ public class TechnicalIndicatorEngine {
         Double bbLower  = bbMiddle - 2 * stddev;
         Double bbWidth  = bbMiddle > 0 ? (bbUpper - bbLower) / bbMiddle * 100 : 0.0;
 
-        // ─── Volume ──────────────────────────────────────────────────────────
-        Double avgVolume20    = avgVolume(volumes, 20);
-        Double currentVolume  = volumes[n - 1];
-        boolean volumeSpike   = avgVolume20 > 0 && currentVolume > 1.5 * avgVolume20;
+        // ─── Volume Trend (5-day avg vs 20-day avg) ──────────────────────────
+        // Spec: compare 5-day average volume against 20-day average volume.
+        // This measures whether RECENT activity is picking up or fading vs the
+        // longer baseline — more meaningful than checking a single day.
+        Double avgVolume20   = avgVolume(volumes, 20);
+        Double avgVolume5    = avgVolume(volumes, 5);
+        Double currentVolume = volumes[n - 1];
+        // Legacy spike flag kept for backward compatibility with InvestmentSignalEngine
+        boolean volumeSpike  = avgVolume20 > 0 && currentVolume > 1.5 * avgVolume20;
+        // New: trend label based on 5-day vs 20-day ratio
+        String volumeTrend;
+        if (avgVolume20 == null || avgVolume20 == 0) {
+            volumeTrend = "N/A";
+        } else {
+            double volRatio = avgVolume5 / avgVolume20;
+            if      (volRatio > 1.3)  volumeTrend = "RISING_STRONG";   // 5d avg > 130% of 20d avg
+            else if (volRatio > 1.1)  volumeTrend = "RISING";
+            else if (volRatio < 0.7)  volumeTrend = "FALLING_WEAK";
+            else if (volRatio < 0.9)  volumeTrend = "FALLING";
+            else                      volumeTrend = "NEUTRAL";
+        }
 
-        // ─── Support & Resistance (last 20 candles) ──────────────────────────
-        int srWindow = Math.min(20, n);
-        double support    = min(lows,   n - srWindow, n);
-        double resistance = max(highs,  n - srWindow, n);
+        // ─── Support & Resistance (last 50 candles) ───────────────────────────
+        // Spec says 50-day window for recent high/low levels.
+        // Using 20 was too narrow and gave noisy, easily-breached levels.
+        int srWindow  = Math.min(50, n);
+        double support    = min(lows,  n - srWindow, n);
+        double resistance = max(highs, n - srWindow, n);
 
         // ─── ADX ─────────────────────────────────────────────────────────────
         Double adx = adx(highs, lows, closes, 14);
 
-        // ─── Trend ───────────────────────────────────────────────────────────
+        // ─── Trend (SMA50 vs SMA200) ──────────────────────────────────────────
+        // Spec: "Trend (50DMA vs 200DMA) → Uptrend / Downtrend / Sideways".
+        // Previous code used SMA20 vs SMA50 which is a short-term signal;
+        // the correct long-term trend classification uses SMA50 vs SMA200.
         String trend = "SIDEWAYS";
-        if (sma20 != null && sma50 != null) {
-            if (sma20 > sma50 && closes[n - 1] > sma50) trend = "UPTREND";
-            else if (sma20 < sma50 && closes[n - 1] < sma50) trend = "DOWNTREND";
+        if (sma50 != null && sma200 != null) {
+            // Classic definition: price above both MAs and SMA50 > SMA200 = Uptrend
+            if (closes[n - 1] > sma50 && sma50 > sma200)  trend = "UPTREND";
+            else if (closes[n - 1] < sma50 && sma50 < sma200) trend = "DOWNTREND";
+            // else: mixed signals → SIDEWAYS
+        } else if (sma50 != null) {
+            // SMA200 not yet available (< 200 candles); fall back to price vs SMA50
+            if (closes[n - 1] > sma50)      trend = "UPTREND";
+            else if (closes[n - 1] < sma50) trend = "DOWNTREND";
         }
+
+        // ─── Price % Change over configured analysis period ──────────────────
+        // Maps lookbackDays → standard trading-day count, then clamps to available data.
+        int periodBars      = Math.min(resolvePeriodBars(lookbackDays), n - 1);
+        String periodLabel  = resolvePeriodLabel(periodBars);
+        Double priceChangePct = periodBars > 0
+                ? round((closes[n - 1] - closes[n - 1 - periodBars])
+                         / closes[n - 1 - periodBars] * 100)
+                : null;
+        log.debug("Price change ({}) = {}% over {} bars (lookbackDays={})",
+                  periodLabel, priceChangePct, periodBars, lookbackDays);
 
         // ─── Price / 52-week range ────────────────────────────────────────────
         double currentPrice          = closes[n - 1];
@@ -106,9 +177,11 @@ public class TechnicalIndicatorEngine {
                                           n > 1 ? macdLineArr[n - 2] : macdLine,
                                           n > 1 ? macdSignalArr[n - 2] : macdSignal);
         String bbSig         = bbLabel(currentPrice, bbUpper, bbLower);
+        // Use n-1 (yesterday) as previous bar — consistent with how macdLabel uses [n-2] vs [n-1]
+        // n-2 in zero-based means the bar BEFORE the current last bar
         String maSig         = maLabel(sma50, sma200,
-                n > 2 ? sma(closes, 50, n - 2) : sma50,
-                n > 2 ? sma(closes, 200, n - 2) : sma200);
+                n > 1 ? sma(closes, 50,  n - 1) : sma50,
+                n > 1 ? sma(closes, 200, n - 1) : sma200);
 
         return TechnicalSignals.builder()
                 .sma20(round(sma20))
@@ -125,8 +198,10 @@ public class TechnicalIndicatorEngine {
                 .bbLower(round(bbLower))
                 .bbWidth(round(bbWidth))
                 .avgVolume20(round(avgVolume20))
+                .avgVolume5(round(avgVolume5))
                 .currentVolume(round(currentVolume))
                 .volumeSpike(volumeSpike)
+                .volumeTrend(volumeTrend)
                 .supportLevel(round(support))
                 .resistanceLevel(round(resistance))
                 .trendDirection(trend)
@@ -136,6 +211,8 @@ public class TechnicalIndicatorEngine {
                 .fiftyTwoWeekLow(round(low52))
                 .currentPrice(round(currentPrice))
                 .priceVs52WeekHighPct(round(priceVs52H))
+                .priceChangePct(priceChangePct)
+                .priceChangePeriodLabel(periodLabel)
                 .rsiSignal(rsiSignal)
                 .macdSignalType(macdSigType)
                 .bbSignal(bbSig)
@@ -158,7 +235,11 @@ public class TechnicalIndicatorEngine {
         return sum / period;
     }
 
-    /** Computes full EMA array using Wilder's smoothing */
+    /**
+     * Computes full EMA array using standard exponential smoothing (multiplier = 2/(period+1)).
+     * Note: this is standard EMA as used in MACD, NOT Wilder's smoothing
+     * (which uses multiplier 1/period and is used in RSI/ADX).
+     */
     private double[] emaArray(double[] arr, int period) {
         double[] ema = new double[arr.length];
         double multiplier = 2.0 / (period + 1);
@@ -321,18 +402,38 @@ public class TechnicalIndicatorEngine {
 
     // ─── Utility ───────────────────────────────────────────────────────────────
 
+    /**
+     * Extracts a price/volume field from candles into a double[].
+     *
+     * <p><b>Null handling:</b> NSE data has gaps (holidays, trading halts).
+     * A null value is forward-filled from the previous candle so that indicator
+     * arithmetic is never poisoned by a 0.  The first element falls back to 0
+     * only if the very first candle is null (extremely rare).</p>
+     *
+     * <p>Zero-filling was the previous behaviour and silently corrupted SMA, RSI,
+     * MACD and Bollinger calculations whenever a null appeared mid-series.</p>
+     */
     private double[] extract(List<StockHistoryDetails> candles, String field) {
         double[] arr = new double[candles.size()];
+        double lastValid = 0;
         for (int i = 0; i < candles.size(); i++) {
             StockHistoryDetails c = candles.get(i);
-            arr[i] = switch (field) {
-                case "close"  -> c.getClose()  != null ? c.getClose()  : 0;
-                case "high"   -> c.getHigh()   != null ? c.getHigh()   : 0;
-                case "low"    -> c.getLow()    != null ? c.getLow()    : 0;
-                case "open"   -> c.getOpen()   != null ? c.getOpen()   : 0;
-                case "volume" -> parseVolume(c.getVolume());
-                default       -> 0;
+            Double raw = switch (field) {
+                case "close"  -> c.getClose();
+                case "high"   -> c.getHigh();
+                case "low"    -> c.getLow();
+                case "open"   -> c.getOpen();
+                case "volume" -> { double v = parseVolume(c.getVolume()); yield v > 0 ? v : null; }
+                default       -> null;
             };
+            if (raw != null) {
+                arr[i] = raw;
+                lastValid = raw;
+            } else {
+                // Forward-fill: reuse the last known value
+                arr[i] = lastValid;
+                log.debug("Forward-fill applied for field={} at candle index={} (null in source data)", field, i);
+            }
         }
         return arr;
     }
