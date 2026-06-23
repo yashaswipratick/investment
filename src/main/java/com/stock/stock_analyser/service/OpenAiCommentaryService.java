@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calls OpenAI Chat Completions API to produce human-readable investment commentary.
+ * Calls OpenAI Responses API to produce human-readable investment commentary.
  *
  * Configuration in application.yml:
  * openai:
@@ -33,7 +33,7 @@ import java.util.Map;
 @Service
 public class OpenAiCommentaryService {
 
-    private static final String OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+    private static final String OPENAI_URL = "https://api.openai.com/v1/responses";
     private static final String OPENAI_VALIDATE_URL = "https://api.openai.com/v1/models";
     private static final Duration KEY_VALIDATION_TIMEOUT = Duration.ofSeconds(8);
 
@@ -91,31 +91,46 @@ public class OpenAiCommentaryService {
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", modelName);
-        body.put("messages", List.of(
+        body.put("input", List.of(
                 Map.of("role", "system",
                         "content", "You are an expert stock market analyst specializing in Indian equity markets (NSE). "
                                 + "Provide concise, actionable investment analysis. "
                                 + "Keep response under 150 words."),
                 Map.of("role", "user", "content", prompt)
         ));
-        body.put("max_tokens", 300);
+        body.put("max_output_tokens", 300);
         body.put("temperature", 0.4);
 
         if (serviceTier != null && !serviceTier.isBlank()) {
             body.put("service_tier", serviceTier);
         }
 
-        return webClient.post()
-                .uri(OPENAI_URL)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + resolvedApiKey)
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(String.class)
+        return sendResponsesRequest(body)
                 .map(this::extractContent)
                 .doOnNext(c -> log.info("OpenAI commentary generated for {}", symbol))
-                .doOnError(e -> log.error("OpenAI call failed for {}: {}", symbol, e.getMessage()))
-                .onErrorReturn("AI commentary unavailable.");
+                .onErrorResume(WebClientResponseException.class, ex -> {
+                    log.error("OpenAI call failed for {}: status={} body={}",
+                            symbol, ex.getStatusCode().value(), shrink(ex.getResponseBodyAsString()));
+
+                    // Some accounts/models reject service_tier on /v1/responses; retry once without it.
+                    if (ex.getStatusCode().value() == 400 && body.containsKey("service_tier")) {
+                        Map<String, Object> fallbackBody = new LinkedHashMap<>(body);
+                        fallbackBody.remove("service_tier");
+                        log.warn("Retrying OpenAI call for {} without service_tier", symbol);
+                        return sendResponsesRequest(fallbackBody)
+                                .map(this::extractContent)
+                                .onErrorResume(retryEx -> {
+                                    log.error("OpenAI retry failed for {}: {}", symbol, retryEx.getMessage());
+                                    return Mono.just("AI commentary unavailable.");
+                                });
+                    }
+
+                    return Mono.just("AI commentary unavailable.");
+                })
+                .onErrorResume(e -> {
+                    log.error("OpenAI call failed for {}: {}", symbol, e.getMessage());
+                    return Mono.just("AI commentary unavailable.");
+                });
     }
 
     public boolean isApiKeyValid() {
@@ -200,10 +215,46 @@ public class OpenAiCommentaryService {
         );
     }
 
+    private Mono<String> sendResponsesRequest(Map<String, Object> body) {
+        return webClient.post()
+                .uri(OPENAI_URL)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + resolvedApiKey)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(String.class);
+    }
+
     private String extractContent(String jsonResponse) {
         try {
             JsonNode root = objectMapper.readTree(jsonResponse);
-            return root.at("/choices/0/message/content").asText("No commentary available.");
+
+            String outputText = root.path("output_text").asText("");
+            if (outputText != null && !outputText.isBlank()) {
+                return outputText;
+            }
+
+            String directText = root.at("/output/0/content/0/text").asText("");
+            if (directText != null && !directText.isBlank()) {
+                return directText;
+            }
+
+            JsonNode output = root.path("output");
+            if (output.isArray()) {
+                for (JsonNode item : output) {
+                    JsonNode content = item.path("content");
+                    if (content.isArray()) {
+                        for (JsonNode c : content) {
+                            String text = c.path("text").asText("");
+                            if (text != null && !text.isBlank()) {
+                                return text;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return "No commentary available.";
         } catch (Exception e) {
             log.error("Failed to parse OpenAI response: {}", e.getMessage());
             return "AI commentary unavailable.";
