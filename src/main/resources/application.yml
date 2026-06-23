@@ -63,6 +63,26 @@ springfox:
 
 stock:
   analyser:
+    # ── lookbackDays reference (pass in the POST /analyse request body) ──────
+    #
+    # lookbackDays controls how much historical data is fetched AND which
+    # period analyses are generated and stored in Cassandra:
+    #
+    #   lookbackDays = 252  →  generates: 1Y + 6M           (2 rows in Cassandra)
+    #   lookbackDays = 504  →  generates: 2Y + 1Y + 6M      (3 rows in Cassandra)
+    #   lookbackDays = 756  →  generates: 3Y + 2Y + 1Y + 6M (4 rows in Cassandra) ← DEFAULT
+    #
+    # Period thresholds (trading days):
+    #   6M = 126 trading days  (~6 calendar months)
+    #   1Y = 252 trading days  (~1 calendar year)
+    #   2Y = 504 trading days  (~2 calendar years)
+    #   3Y = 756 trading days  (~3 calendar years)
+    #
+    # Example request:
+    #   POST /stock/investment/v1.0/stockAnalyser/analyse
+    #   { "symbol": "INFY", "lookbackDays": 756, "includeAiCommentary": true }
+    #
+    # ── chunk-coverage-threshold ──────────────────────────────────────────────
     # % weekday coverage needed to treat a chunk as already present in DB.
     # Tuning guide:
     #   90 -> stricter (fetch more often; only near-complete DB chunks are skipped)

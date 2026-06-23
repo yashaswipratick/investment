@@ -27,9 +27,12 @@ CREATE TABLE IF NOT EXISTS stock_analysis_result (
     window_status       text,
     window_message      text,
     data_note           text,
-    technical_json      text,
-    recommendation_json text,
-    created_at          timestamp,
+    technical_json          text,
+    recommendation_json     text,
+    projections_json        text,   -- period-wise return projections: 3M,6M,9M,1Y,2Y,3Y,5Y
+    entry_timing_json       text,   -- is NOW a good time to invest + trigger to watch
+    stop_loss_strategy_json text,   -- stop-loss, recovery plan, re-entry condition
+    created_at              timestamp,
     PRIMARY KEY ((symbol), period_label, analysis_date)
 ) WITH CLUSTERING ORDER BY (period_label ASC, analysis_date DESC)
   AND comment = 'Stock analysis results keyed by symbol + period (6M/1Y/2Y/3Y) + date';

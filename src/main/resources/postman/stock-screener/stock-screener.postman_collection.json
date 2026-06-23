@@ -1,0 +1,187 @@
+{
+  "info": {
+    "name": "Stock Screener API",
+    "description": "Endpoints for screening and ranking analysed stocks by investment opportunity.\n\nPre-requisite: Run /analyse for each stock first to populate Cassandra.\nThe screener only ranks stocks that have already been analysed.\n\nPeriod values: 6M | 1Y | 2Y | 3Y",
+    "_postman_id": "stock-screener-collection-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string",
+      "description": "Base URL — change to your server host if running remotely"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Screener — Top 10 (1 Year)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/screener?period=1Y&topN=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "screener"],
+          "query": [
+            { "key": "period", "value": "1Y",  "description": "Analysis period: 6M | 1Y | 2Y | 3Y" },
+            { "key": "topN",   "value": "10",  "description": "Number of top stocks to return" }
+          ]
+        },
+        "description": "Returns top 10 best investment opportunities based on 1-year analysis.\nRanked by: BUY > HOLD > SELL > AVOID → confidence score → risk/reward ratio."
+      }
+    },
+    {
+      "name": "2. Screener — Top 5 (6 Months)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/screener?period=6M&topN=5",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "screener"],
+          "query": [
+            { "key": "period", "value": "6M", "description": "6-month analysis window" },
+            { "key": "topN",   "value": "5",  "description": "Top 5 stocks" }
+          ]
+        },
+        "description": "Short-term view — top 5 stocks ranked by 6-month analysis."
+      }
+    },
+    {
+      "name": "3. Screener — Top 10 (2 Years)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/screener?period=2Y&topN=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "screener"],
+          "query": [
+            { "key": "period", "value": "2Y", "description": "2-year analysis window" },
+            { "key": "topN",   "value": "10", "description": "Top 10 stocks" }
+          ]
+        },
+        "description": "Medium-term view — top 10 stocks ranked by 2-year analysis."
+      }
+    },
+    {
+      "name": "4. Screener — Top 10 (3 Years)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/screener?period=3Y&topN=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "screener"],
+          "query": [
+            { "key": "period", "value": "3Y", "description": "3-year analysis window" },
+            { "key": "topN",   "value": "10", "description": "Top 10 stocks" }
+          ]
+        },
+        "description": "Long-term view — top 10 stocks ranked by 3-year analysis.\nBest for identifying structural trends and long-term investments."
+      }
+    },
+    {
+      "name": "5. Analyse Stock — INFY (3 Years)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"symbol\": \"INFY\",\n  \"lookbackDays\": 756,\n  \"includeAiCommentary\": true\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/analyse",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+        },
+        "description": "Analyse INFY for 3 years.\nlookbackDays=756 generates all 4 periods: 3Y + 2Y + 1Y + 6M.\nRun this for each stock before calling the screener."
+      }
+    },
+    {
+      "name": "6. Analyse Stock — TCS (3 Years)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"symbol\": \"TCS\",\n  \"lookbackDays\": 756,\n  \"includeAiCommentary\": true\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/analyse",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+        },
+        "description": "Analyse TCS for 3 years."
+      }
+    },
+    {
+      "name": "7. Analyse Stock — RELIANCE (3 Years)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"symbol\": \"RELIANCE\",\n  \"lookbackDays\": 756,\n  \"includeAiCommentary\": true\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/analyse",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+        },
+        "description": "Analyse RELIANCE for 3 years."
+      }
+    },
+    {
+      "name": "8. Analyse — No AI Commentary (faster)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"symbol\": \"HDFCBANK\",\n  \"lookbackDays\": 756,\n  \"includeAiCommentary\": false\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/analyse",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+        },
+        "description": "Analyse without OpenAI commentary — faster response.\nUse includeAiCommentary:false for batch pre-population of the screener."
+      }
+    },
+    {
+      "name": "9. OpenAI Key Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/stock/investment/v1.0/stockAnalyser/openai/key-status",
+          "host": ["{{baseUrl}}"],
+          "path": ["stock", "investment", "v1.0", "stockAnalyser", "openai", "key-status"]
+        },
+        "description": "Check if the OpenAI API key is valid and AI commentary is enabled."
+      }
+    }
+  ]
+}

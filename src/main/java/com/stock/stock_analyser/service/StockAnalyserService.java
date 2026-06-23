@@ -9,7 +9,11 @@ import com.stock.stock_analyser.dto.InvestmentRecommendation;
 import com.stock.stock_analyser.dto.StockAnalysisRequest;
 import com.stock.stock_analyser.dto.StockAnalysisResult;
 import com.stock.stock_analyser.dto.TechnicalSignals;
+import com.stock.stock_analyser.dto.EntryTiming;
+import com.stock.stock_analyser.dto.PeriodProjection;
+import com.stock.stock_analyser.dto.StopLossStrategy;
 import com.stock.stock_analyser.engine.InvestmentSignalEngine;
+import com.stock.stock_analyser.engine.ProjectionEngine;
 import com.stock.stock_analyser.engine.TechnicalIndicatorEngine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,6 +69,7 @@ public class StockAnalyserService {
     private final StockHistoryDataIntegrator stockHistoryDataIntegrator;
     private final TechnicalIndicatorEngine   technicalEngine;
     private final InvestmentSignalEngine     signalEngine;
+    private final ProjectionEngine           projectionEngine;
     private final OpenAiCommentaryService    openAiService;
     private final StockAnalysisResultPersistenceService analysisResultPersistenceService;
 
@@ -96,21 +101,41 @@ public class StockAnalyserService {
 
         return stockHistoryDataService.get(key)
                 .flatMap(stockHistory -> {
+                    LocalDate today        = LocalDate.now();
                     LocalDate requiredFrom = requiredFromDate(lookbackDays);
                     TreeMap<LocalDate, StockHistoryDetails> details = stockHistory.getStockHistoryDetails();
-                    boolean hasFullCoverage = details != null
+
+                    // ── Check 1: does the DB go back far enough? ──────────────
+                    boolean coversHistory = details != null
                             && !details.isEmpty()
                             && !details.firstKey().isAfter(requiredFrom);
 
-                    if (hasFullCoverage) {
-                        log.info("Cassandra already covers {}d window for {} (earliest: {}). Skipping fetch.",
-                                lookbackDays, symbol, details.firstKey());
+                    // ── Check 2: is the DB up-to-date? ────────────────────────
+                    // NSE publishes data after market close (typically by 6 PM IST).
+                    // Allow a 3-day tolerance to account for weekends/holidays.
+                    // If the latest candle is older than 3 calendar days, the DB is stale
+                    // and we must fetch the recent missing days from NSE.
+                    boolean isRecent = details != null
+                            && !details.isEmpty()
+                            && !details.lastKey().isBefore(today.minusDays(3));
+
+                    if (coversHistory && isRecent) {
+                        log.info("Cassandra covers full window for {} (earliest: {}, latest: {}). Skipping NSE fetch.",
+                                symbol, details.firstKey(), details.lastKey());
                         return Mono.just(stockHistory);
                     }
 
-                    log.info("Cassandra data for {} does not cover {}d window. Auto-fetching in 3-month chunks.", symbol, lookbackDays);
+                    if (coversHistory && !isRecent) {
+                        // History is sufficient but recent candles are missing — fetch only the recent gap
+                        log.info("Cassandra data for {} is stale (latest: {}). Fetching recent missing days.",
+                                symbol, details.lastKey());
+                    } else {
+                        log.info("Cassandra data for {} does not cover {}d window (earliest: {}). Fetching missing history.",
+                                symbol, lookbackDays, details == null || details.isEmpty() ? "N/A" : details.firstKey());
+                    }
+
                     return autoFetchMissingChunks(symbol, lookbackDays, details)
-                            .doOnNext(sh -> log.info("Chunked fetch done for {}. total records: {}",
+                            .doOnNext(sh -> log.info("Fetch done for {}. total records: {}",
                                     symbol, sh.getStockHistoryDetails().size()));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
@@ -271,20 +296,28 @@ public class StockAnalyserService {
 
         log.info("[{}][{}] Analysing {} candles | windowStatus={}", symbol, periodLabel, total, windowStatus);
 
-        TechnicalSignals technical = technicalEngine.compute(candles, tradingBars);
+        TechnicalSignals technical         = technicalEngine.compute(candles, tradingBars);
         InvestmentRecommendation recommendation = signalEngine.recommend(technical);
+
+        // ── New: projections, entry timing, stop-loss strategy ───────────────
+        java.util.List<PeriodProjection> projections = projectionEngine.computeProjections(technical, recommendation);
+        EntryTiming     entryTiming      = projectionEngine.computeEntryTiming(technical, recommendation);
+        StopLossStrategy stopLossStrategy = projectionEngine.computeStopLossStrategy(technical, recommendation);
+
         String dataNote = buildDataNote(total, dataFrom, dataTo);
 
         if (!includeAi) {
             return Mono.just(buildResult(symbol, periodLabel, total, dataFrom, dataTo,
-                    requiredRecommended, windowStatus, windowMessage, technical, recommendation, dataNote));
+                    requiredRecommended, windowStatus, windowMessage, technical, recommendation,
+                    projections, entryTiming, stopLossStrategy, dataNote));
         }
 
         return openAiService.generateCommentary(symbol + " [" + periodLabel + "]", technical, recommendation)
                 .map(commentary -> {
                     recommendation.setAiCommentary(commentary);
                     return buildResult(symbol, periodLabel, total, dataFrom, dataTo,
-                            requiredRecommended, windowStatus, windowMessage, technical, recommendation, dataNote);
+                            requiredRecommended, windowStatus, windowMessage, technical, recommendation,
+                            projections, entryTiming, stopLossStrategy, dataNote);
                 });
     }
 
@@ -309,6 +342,9 @@ public class StockAnalyserService {
                                             String windowStatus, String windowMessage,
                                             TechnicalSignals technical,
                                             InvestmentRecommendation recommendation,
+                                            java.util.List<PeriodProjection> projections,
+                                            EntryTiming entryTiming,
+                                            StopLossStrategy stopLossStrategy,
                                             String dataNote) {
         return StockAnalysisResult.builder()
                 .symbol(symbol)
@@ -322,6 +358,9 @@ public class StockAnalyserService {
                 .windowMessage(windowMessage)
                 .technical(technical)
                 .recommendation(recommendation)
+                .projections(projections)
+                .entryTiming(entryTiming)
+                .stopLossStrategy(stopLossStrategy)
                 .dataNote(dataNote)
                 .build();
     }

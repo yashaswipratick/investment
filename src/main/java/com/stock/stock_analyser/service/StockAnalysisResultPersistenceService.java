@@ -45,6 +45,9 @@ public class StockAnalysisResultPersistenceService {
                 .dataNote(result.getDataNote())
                 .technicalJson(toJson(result.getTechnical()))
                 .recommendationJson(toJson(result.getRecommendation()))
+                .projectionsJson(toJson(result.getProjections()))
+                .entryTimingJson(toJson(result.getEntryTiming()))
+                .stopLossStrategyJson(toJson(result.getStopLossStrategy()))
                 .createdAt(Instant.now())
                 .build();
 

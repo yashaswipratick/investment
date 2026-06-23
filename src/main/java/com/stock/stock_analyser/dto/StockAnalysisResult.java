@@ -41,6 +41,15 @@ public class StockAnalysisResult {
     private TechnicalSignals technical;
     private InvestmentRecommendation recommendation;
 
+    /** Period-wise profit projections: 3M, 6M, 9M, 1Y, 2Y, 3Y, 5Y */
+    private java.util.List<PeriodProjection> projections;
+
+    /** Answers: is NOW a good time to invest? What trigger to watch? */
+    private EntryTiming entryTiming;
+
+    /** Stop-loss level, action if hit, and recovery/re-entry plan */
+    private StopLossStrategy stopLossStrategy;
+
     /** Any additional warnings or data quality notes */
     private String dataNote;
 }

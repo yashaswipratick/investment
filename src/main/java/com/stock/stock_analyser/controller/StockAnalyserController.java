@@ -1,19 +1,23 @@
 package com.stock.stock_analyser.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stock.repository.StockAnalysisResultRepository;
+import com.stock.stock_analyser.dto.InvestmentRecommendation;
 import com.stock.stock_analyser.dto.StockAnalysisRequest;
 import com.stock.stock_analyser.dto.StockAnalysisResult;
+import com.stock.stock_analyser.dto.TechnicalSignals;
 import com.stock.stock_analyser.service.OpenAiCommentaryService;
 import com.stock.stock_analyser.service.StockAnalyserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Collections;
+import java.util.*;
+import java.util.Comparator;
 
 /**
  * REST endpoint for stock analysis.
@@ -25,6 +29,7 @@ import java.util.Collections;
  *   "includeAiCommentary": true
  * }
  */
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/stock/investment/v1.0/stockAnalyser")
@@ -32,6 +37,8 @@ public class StockAnalyserController {
 
     private final StockAnalyserService analyserService;
     private final OpenAiCommentaryService openAiCommentaryService;
+    private final StockAnalysisResultRepository resultRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * Runs full technical analysis for ALL applicable periods in one call.
@@ -85,6 +92,106 @@ public class StockAnalyserController {
      *   VALIDATION_ERROR         – network/runtime error during validation
      *   MISSING_OR_EMPTY_KEY_FILE – file path missing, file not found, or file is empty
      *   NOT_VALIDATED            – service has not started yet
+     */
+    /**
+     * Screener — ranks all analysed stocks by best investment opportunity.
+     *
+     * GET /stock/investment/v1.0/stockAnalyser/screener?period=1Y&topN=10
+     *
+     * period: 6M | 1Y | 2Y | 3Y  (default: 1Y)
+     * topN:   number of top stocks to return (default: 10)
+     *
+     * Returns stocks ranked by:
+     *   1. Action priority: BUY > HOLD > SELL > AVOID
+     *   2. Confidence score (highest first)
+     *   3. Risk/reward ratio (highest first)
+     *
+     * Response includes for each stock:
+     *   - symbol, action, confidence, trend, entry zone, target, stop-loss
+     *   - entryTiming.goodTimeToInvest
+     *   - 1Y projected return %
+     */
+    @GetMapping(value = "/screener", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<List<Map<String, Object>>>> screener(
+            @RequestParam(defaultValue = "1Y") String period,
+            @RequestParam(defaultValue = "10") int topN) {
+
+        return resultRepository.findAllByPeriodLabel(period)
+                .map(entity -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("symbol",      entity.getKey().getSymbol());
+                    row.put("periodLabel", entity.getKey().getPeriodLabel());
+                    row.put("analysisDate", entity.getKey().getAnalysisDate());
+                    row.put("windowStatus", entity.getWindowStatus());
+
+                    try {
+                        if (entity.getRecommendationJson() != null && !entity.getRecommendationJson().isBlank()) {
+                            InvestmentRecommendation rec = objectMapper.readValue(
+                                    entity.getRecommendationJson(), InvestmentRecommendation.class);
+                            row.put("action",           rec.getAction());
+                            row.put("confidenceScore",  rec.getConfidenceScore());
+                            row.put("entryPriceLow",    rec.getEntryPriceLow());
+                            row.put("entryPriceHigh",   rec.getEntryPriceHigh());
+                            row.put("targetPrice",      rec.getTargetPrice());
+                            row.put("stopLossPrice",    rec.getStopLossPrice());
+                            row.put("upsidePct",        rec.getPotentialUpsidePct());
+                            row.put("riskReward",       rec.getRiskRewardRatio());
+                            row.put("timeframe",        rec.getTimeframe());
+                        }
+                        if (entity.getTechnicalJson() != null && !entity.getTechnicalJson().isBlank()) {
+                            TechnicalSignals tech = objectMapper.readValue(
+                                    entity.getTechnicalJson(), TechnicalSignals.class);
+                            row.put("currentPrice",   tech.getCurrentPrice());
+                            row.put("trendDirection", tech.getTrendDirection());
+                            row.put("rsi14",          tech.getRsi14());
+                            row.put("macdSignal",     tech.getMacdSignalType());
+                            row.put("priceChangePct", tech.getPriceChangePct());
+                        }
+                        if (entity.getEntryTimingJson() != null && !entity.getEntryTimingJson().isBlank()) {
+                            com.stock.stock_analyser.dto.EntryTiming et = objectMapper.readValue(
+                                    entity.getEntryTimingJson(), com.stock.stock_analyser.dto.EntryTiming.class);
+                            row.put("goodTimeToInvest",  et.isGoodTimeToInvest());
+                            row.put("entryTimingSignal", et.getSignal());
+                            row.put("entryTrigger",      et.getEntryTrigger());
+                        }
+                    } catch (Exception e) {
+                        log.warn("Screener: failed to parse JSON for {}: {}", entity.getKey().getSymbol(), e.getMessage());
+                    }
+                    return row;
+                })
+                .sort(Comparator
+                        .comparingInt((Map<String, Object> m) -> {
+                            Object a = m.get("action");
+                            return switch (a != null ? a.toString() : "") {
+                                case "BUY"   -> 0;
+                                case "HOLD"  -> 1;
+                                case "SELL"  -> 2;
+                                case "AVOID" -> 3;
+                                default      -> 4;
+                            };
+                        })
+                        .thenComparingInt((Map<String, Object> m) -> {
+                            Object c = m.get("confidenceScore");
+                            return c instanceof Number n ? -n.intValue() : 0;   // descending
+                        })
+                        .thenComparingDouble((Map<String, Object> m) -> {
+                            Object r = m.get("riskReward");
+                            return r instanceof Number n ? -n.doubleValue() : 0; // descending
+                        })
+                )
+                .take(topN)
+                .collectList()
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("Screener failed: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.internalServerError().build());
+                });
+    }
+
+    /**
+     * Returns current OpenAI API key validation status.
+     *
+     * GET /stock/investment/v1.0/stockAnalyser/openai/key-status
      */
     @GetMapping(value = "/openai/key-status", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> openAiKeyStatus() {

@@ -49,6 +49,15 @@ public class StockAnalysisResultEntity {
     @Column("recommendation_json")
     private String recommendationJson;
 
+    @Column("projections_json")
+    private String projectionsJson;
+
+    @Column("entry_timing_json")
+    private String entryTimingJson;
+
+    @Column("stop_loss_strategy_json")
+    private String stopLossStrategyJson;
+
     @Column("created_at")
     private Instant createdAt;
 }
