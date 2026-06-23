@@ -45,8 +45,33 @@ public class StockAnalysisResultPersistenceService {
                 .createdAt(Instant.now())
                 .build();
 
+        // Log the full result before persisting so it's visible in logs even if Cassandra fails
+        log.info("[PERSIST][{}] About to persist analysis result:\n" +
+                 "  Window    : {} | {}\n" +
+                 "  Data Range: {} → {} ({} candles)\n" +
+                 "  Action    : {} | Confidence: {}%\n" +
+                 "  Entry     : ₹{} – ₹{} | Target: ₹{} | SL: ₹{}\n" +
+                 "  R/R       : {} | Upside: {}% | Downside: {}%\n" +
+                 "  AI Commentary ({} chars): {}",
+                result.getSymbol(),
+                result.getWindowStatus(), result.getWindowMessage() != null ? result.getWindowMessage().substring(0, Math.min(80, result.getWindowMessage().length())) + "..." : "N/A",
+                result.getDataFrom(), result.getDataTo(), result.getTotalDataPoints(),
+                result.getRecommendation() != null ? result.getRecommendation().getAction()          : "N/A",
+                result.getRecommendation() != null ? result.getRecommendation().getConfidenceScore() : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getEntryPriceLow()   : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getEntryPriceHigh()  : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getTargetPrice()     : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getStopLossPrice()   : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getRiskRewardRatio() : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getPotentialUpsidePct()   : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getPotentialDownsidePct() : 0,
+                result.getRecommendation() != null && result.getRecommendation().getAiCommentary() != null
+                        ? result.getRecommendation().getAiCommentary().length() : 0,
+                result.getRecommendation() != null ? result.getRecommendation().getAiCommentary() : "none"
+        );
+
         return repository.save(entity)
-                .doOnNext(saved -> log.info("Persisted analysis result. symbol={}, analysisDate={}",
+                .doOnNext(saved -> log.info("[PERSIST][{}] Successfully saved to Cassandra. analysisDate={}",
                         saved.getKey().getSymbol(), saved.getKey().getAnalysisDate()))
                 .thenReturn(result)
                 .onErrorResume(e -> {

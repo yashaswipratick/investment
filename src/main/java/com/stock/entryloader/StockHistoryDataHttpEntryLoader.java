@@ -9,6 +9,7 @@ import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.resolver.NoopAddressResolverGroup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.json.JSONArray;
@@ -110,6 +111,15 @@ public class StockHistoryDataHttpEntryLoader {
             }
         } else {
             log.debug("No corporate proxy env vars detected — connecting directly");
+        }
+
+        // ── Step 1b: DNS — let proxy resolve external hostnames ──────────────
+        // Walmart DNS doesn't resolve external domains. Without this, Netty tries
+        // to resolve nseindia.com locally and fails. NoopAddressResolverGroup
+        // skips local DNS — the proxy receives the hostname and resolves it.
+        if (proxyEnv != null && !proxyEnv.isBlank()) {
+            httpClient = httpClient.resolver(NoopAddressResolverGroup.INSTANCE);
+            log.debug("NSE WebClient: local DNS disabled — proxy handles hostname resolution");
         }
 
         // ── Step 2: SSL — trust Walmart certificate inspection chain ──────────
