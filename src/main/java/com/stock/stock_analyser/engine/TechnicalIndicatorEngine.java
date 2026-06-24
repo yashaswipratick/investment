@@ -1,6 +1,7 @@
 package com.stock.stock_analyser.engine;
 
 import com.stock.dto.StockHistoryDetails;
+import com.stock.stock_analyser.dto.BacktestResult;
 import com.stock.stock_analyser.dto.TechnicalSignals;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ import java.util.List;
 public class TechnicalIndicatorEngine {
 
     private final CandlestickEngine candlestickEngine;
+    private final BacktestEngine    backtestEngine;
 
     // ─── Public entry point ────────────────────────────────────────────────────
 
@@ -187,10 +189,31 @@ public class TechnicalIndicatorEngine {
                 n > 1 ? sma(closes, 50,  n - 1) : sma50,
                 n > 1 ? sma(closes, 200, n - 1) : sma200);
 
+        // ─── Build intermediate signals for backtest fingerprint ──────────────
+        // (backtest needs RSI, MACD, trend, BB — computed above — to fingerprint the current bar)
+        TechnicalSignals partialSignals = TechnicalSignals.builder()
+                .rsi14(round(rsi14))
+                .macdLine(round(macdLine))
+                .macdSignal(round(macdSignal))
+                .trendDirection(trend)
+                .bbSignal(bbLabel(currentPrice, bbUpper, bbLower))
+                .build();
+
+        // ─── Backtest ─────────────────────────────────────────────────────────
+        BacktestResult backtestResult = backtestEngine.backtest(candles, partialSignals);
+
+        // ─── Historical Volatility (annualised) ──────────────────────────────
+        // Uses daily log returns: ln(close[i] / close[i-1]).
+        // Log returns are preferred over simple returns because they're symmetric
+        // and additive — the standard approach used by options traders / quants.
+        Double annualizedVol = annualizedVolatility(closes);
+
         // ─── Candlestick & Price-Action (deterministic) ───────────────────────
         CandlestickSignals csSignals = candlestickEngine.analyse(candles);
 
         return TechnicalSignals.builder()
+                .backtestResult(backtestResult)
+                .annualizedVolatilityPct(round(annualizedVol))
                 .candlestickSignals(csSignals)
                 .sma20(round(sma20))
                 .sma50(round(sma50))
@@ -450,6 +473,37 @@ public class TechnicalIndicatorEngine {
         if (vol == null || vol.isBlank()) return 0;
         try { return Double.parseDouble(vol.replace(",", "").trim()); }
         catch (NumberFormatException e) { return 0; }
+    }
+
+    /**
+     * Annualised historical volatility using daily log returns.
+     *
+     * Formula:
+     *   dailyReturn[i] = ln(close[i] / close[i-1])
+     *   stdDev         = population std dev of dailyReturn[]
+     *   annVol         = stdDev × √252 × 100  (in %)
+     *
+     * Returns null if fewer than 10 data points are available.
+     * Uses ALL available candles (not just the lookback window) for a
+     * stable volatility estimate.
+     */
+    private Double annualizedVolatility(double[] closes) {
+        int n = closes.length;
+        if (n < 10) return null;
+        double[] logReturns = new double[n - 1];
+        for (int i = 1; i < n; i++) {
+            if (closes[i - 1] > 0) {
+                logReturns[i - 1] = Math.log(closes[i] / closes[i - 1]);
+            }
+        }
+        double mean = 0;
+        for (double r : logReturns) mean += r;
+        mean /= logReturns.length;
+        double variance = 0;
+        for (double r : logReturns) variance += (r - mean) * (r - mean);
+        variance /= logReturns.length;
+        double dailyStdDev = Math.sqrt(variance);
+        return dailyStdDev * Math.sqrt(252) * 100; // annualised %
     }
 
     private Double round(Double v) {

@@ -1,5 +1,6 @@
 package com.stock.stock_analyser.dto;
 
+import com.stock.stock_analyser.dto.BacktestResult;
 import com.stock.stock_analyser.engine.CandlestickSignals;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -81,6 +82,22 @@ public class TechnicalSignals {
      * Included in API response so clients know which window the change covers.
      */
     private String priceChangePeriodLabel;
+
+    // ── Backtesting ──────────────────────────────────────────────────────────
+    /**
+     * Backtested forward-return statistics for the current signal setup.
+     * Null when insufficient historical data (< ~500 candles).
+     */
+    private BacktestResult backtestResult;
+
+    // ── Historical Volatility ────────────────────────────────────────────────
+    /**
+     * Annualised historical volatility based on daily log returns (%).
+     * Formula: StdDev(daily log returns) × √252 × 100
+     * e.g. 35.0 = stock typically swings ±35% per year (1σ).
+     * Used to build bull/bear case ranges in ProjectionEngine.
+     */
+    private Double annualizedVolatilityPct;
 
     // ── Candlestick & Price-Action (deterministic, computed in Java) ─────────
     /**

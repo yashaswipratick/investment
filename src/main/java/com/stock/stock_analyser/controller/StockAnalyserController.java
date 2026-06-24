@@ -111,6 +111,70 @@ public class StockAnalyserController {
      *   - entryTiming.goodTimeToInvest
      *   - 1Y projected return %
      */
+    /**
+     * Fetch latest analysis for a specific symbol across all stored periods.
+     * GET /stock/investment/v1.0/stockAnalyser/result/{symbol}
+     * Returns: { "1Y": {...}, "2Y": {...}, "6M": {...}, "3Y": {...} }
+     */
+    @GetMapping(value = "/result/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> getResult(@PathVariable String symbol) {
+        return resultRepository.findAllByPeriodLabel("1Y")
+                .filter(e -> e.getKey().getSymbol().equalsIgnoreCase(symbol))
+                .mergeWith(resultRepository.findAllByPeriodLabel("2Y")
+                        .filter(e -> e.getKey().getSymbol().equalsIgnoreCase(symbol)))
+                .mergeWith(resultRepository.findAllByPeriodLabel("3Y")
+                        .filter(e -> e.getKey().getSymbol().equalsIgnoreCase(symbol)))
+                .mergeWith(resultRepository.findAllByPeriodLabel("6M")
+                        .filter(e -> e.getKey().getSymbol().equalsIgnoreCase(symbol)))
+                .collectMap(
+                        e -> e.getKey().getPeriodLabel(),
+                        e -> {
+                            Map<String, Object> m = new LinkedHashMap<>();
+                            m.put("symbol",        e.getKey().getSymbol());
+                            m.put("periodLabel",   e.getKey().getPeriodLabel());
+                            m.put("analysisDate",  e.getKey().getAnalysisDate());
+                            m.put("windowStatus",  e.getWindowStatus());
+                            m.put("windowMessage", e.getWindowMessage());
+                            m.put("totalDataPoints", e.getTotalDataPoints());
+                            m.put("dataNote",        e.getDataNote());
+                            m.put("dataFrom",        e.getDataFrom());
+                            m.put("dataTo",          e.getDataTo());
+                            try {
+                                if (e.getRecommendationJson() != null)
+                                    m.put("recommendation", objectMapper.readValue(e.getRecommendationJson(), Object.class));
+                                if (e.getTechnicalJson() != null)
+                                    m.put("technical", objectMapper.readValue(e.getTechnicalJson(), Object.class));
+                                if (e.getProjectionsJson() != null)
+                                    m.put("projections", objectMapper.readValue(e.getProjectionsJson(), Object.class));
+                                if (e.getEntryTimingJson() != null)
+                                    m.put("entryTiming", objectMapper.readValue(e.getEntryTimingJson(), Object.class));
+                                if (e.getStopLossStrategyJson() != null)
+                                    m.put("stopLossStrategy", objectMapper.readValue(e.getStopLossStrategyJson(), Object.class));
+                            } catch (Exception ex) {
+                                log.warn("Failed to parse JSON for {}: {}", symbol, ex.getMessage());
+                            }
+                            return (Object) m;
+                        }
+                )
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> Mono.just(ResponseEntity.internalServerError().build()));
+    }
+
+    /**
+     * Returns all distinct symbols that have been analysed.
+     * GET /stock/investment/v1.0/stockAnalyser/symbols
+     */
+    @GetMapping(value = "/symbols", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<List<String>>> getSymbols() {
+        return resultRepository.findAllByPeriodLabel("1Y")
+                .map(e -> e.getKey().getSymbol())
+                .distinct()
+                .sort()
+                .collectList()
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> Mono.just(ResponseEntity.ok(List.of())));
+    }
+
     @GetMapping(value = "/screener", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<List<Map<String, Object>>>> screener(
             @RequestParam(defaultValue = "1Y") String period,

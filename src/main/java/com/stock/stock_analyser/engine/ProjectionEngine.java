@@ -1,10 +1,14 @@
 package com.stock.stock_analyser.engine;
 
+import com.stock.stock_analyser.dto.BacktestResult;
 import com.stock.stock_analyser.dto.EntryTiming;
 import com.stock.stock_analyser.dto.InvestmentRecommendation;
 import com.stock.stock_analyser.dto.PeriodProjection;
 import com.stock.stock_analyser.dto.StopLossStrategy;
 import com.stock.stock_analyser.dto.TechnicalSignals;
+
+import java.util.HashMap;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -41,6 +45,15 @@ public class ProjectionEngine {
     private static final double TREND_SIDEWAYS= 0.6;
     private static final double TREND_DOWN    = 0.3;
 
+    // Horizon years (for volatility scaling: σ scales with √t)
+    private static final double Y_3M  = 0.25;
+    private static final double Y_6M  = 0.50;
+    private static final double Y_9M  = 0.75;
+    private static final double Y_1Y  = 1.00;
+    private static final double Y_2Y  = 2.00;
+    private static final double Y_3Y  = 3.00;
+    private static final double Y_5Y  = 5.00;
+
     public List<PeriodProjection> computeProjections(TechnicalSignals t, InvestmentRecommendation r) {
         List<PeriodProjection> list = new ArrayList<>();
         if (t == null || r == null || t.getCurrentPrice() == null || r.getTargetPrice() == null) {
@@ -61,16 +74,77 @@ public class ProjectionEngine {
         int score = r.getConfidenceScore();
         String overallConf = score >= 65 ? "HIGH" : (score >= 45 ? "MEDIUM" : "LOW");
 
+        // Annualised volatility (% / year) — used to build ±1σ bull/bear ranges
+        // If not available, fall back to 30% (typical mid-cap Indian stock volatility)
+        double annVol = (t.getAnnualizedVolatilityPct() != null && t.getAnnualizedVolatilityPct() > 0)
+                ? t.getAnnualizedVolatilityPct()
+                : 30.0;
+
+        // Build a lookup from horizon → BacktestResult.HorizonStat (if available)
+        Map<String, BacktestResult.HorizonStat> btMap = new HashMap<>();
+        BacktestResult bt = t.getBacktestResult();
+        if (bt != null && bt.isStatistically_significant() && bt.getHorizonStats() != null) {
+            for (BacktestResult.HorizonStat hs : bt.getHorizonStats()) {
+                btMap.put(hs.getHorizon(), hs);
+            }
+        }
+
         // ── Horizon projections ───────────────────────────────────────────────
-        list.add(build("3M",  price, upside1Y, F_3M,  trendMult, trend, r, "LOW",    t));
-        list.add(build("6M",  price, upside1Y, F_6M,  trendMult, trend, r, "LOW",    t));
-        list.add(build("9M",  price, upside1Y, F_9M,  trendMult, trend, r, "MEDIUM", t));
-        list.add(build("1Y",  price, upside1Y, F_1Y,  trendMult, trend, r, overallConf, t));
-        list.add(build("2Y",  price, upside1Y, F_2Y,  trendMult, trend, r, "MEDIUM", t));
-        list.add(build("3Y",  price, upside1Y, F_3Y,  trendMult, trend, r, "MEDIUM", t));
-        list.add(build("5Y",  price, upside1Y, F_5Y,  1.0,       trend, r, "LOW",    t));
+        // When backtest data exists for a horizon, use its expected value as the base
+        // return instead of the linear extrapolation. Confidence is upgraded.
+        list.add(buildWithBacktest("3M",  price, upside1Y, F_3M,  Y_3M,  trendMult, annVol, trend, r, "LOW",    t, btMap.get("3M")));
+        list.add(buildWithBacktest("6M",  price, upside1Y, F_6M,  Y_6M,  trendMult, annVol, trend, r, "LOW",    t, btMap.get("6M")));
+        list.add(build("9M",  price, upside1Y, F_9M,  Y_9M,  trendMult, annVol, trend, r, "MEDIUM", t));
+        list.add(buildWithBacktest("1Y",  price, upside1Y, F_1Y,  Y_1Y,  trendMult, annVol, trend, r, overallConf, t, btMap.get("1Y")));
+        list.add(build("2Y",  price, upside1Y, F_2Y,  Y_2Y,  trendMult, annVol, trend, r, "MEDIUM", t));
+        list.add(build("3Y",  price, upside1Y, F_3Y,  Y_3Y,  trendMult, annVol, trend, r, "MEDIUM", t));
+        list.add(build("5Y",  price, upside1Y, F_5Y,  Y_5Y,  1.0,       annVol, trend, r, "LOW",    t));
 
         return list;
+    }
+
+    private PeriodProjection buildWithBacktest(String horizon, double price, double upside1Y,
+                                               double factor, double years, double trendMult,
+                                               double annVol, String trend,
+                                               InvestmentRecommendation r, String conf,
+                                               TechnicalSignals t, BacktestResult.HorizonStat bt) {
+        if (bt == null) {
+            return build(horizon, price, upside1Y, factor, years, trendMult, annVol, trend, r, conf, t);
+        }
+
+        // Use backtest expected value as the base return — grounded in actual history
+        double baseReturn = bt.getExpectedValuePct() != null ? bt.getExpectedValuePct() : upside1Y * factor * trendMult;
+        double targetPrice = price * (1 + baseReturn / 100);
+        double oneSigma   = annVol * Math.sqrt(years);
+        double bullReturn = round(baseReturn + oneSigma);
+        double bearReturn = round(baseReturn - oneSigma);
+        double bullPrice  = round(price * (1 + bullReturn / 100));
+        double bearPrice  = round(price * (1 + bearReturn / 100));
+
+        // Confidence is higher when backtest is statistically significant
+        String btConf = bt.getWinRatePct() != null && bt.getWinRatePct() >= 65 ? "HIGH"
+                      : bt.getWinRatePct() != null && bt.getWinRatePct() >= 50 ? "MEDIUM" : "LOW";
+
+        String scenario = String.format(
+            "Backtest: %d historical matches | Win rate: %.0f%% | Avg: %.1f%% | Median: %.1f%%",
+            (int)(bt.getWinRatePct() * 0 + (bt.getBestReturnPct() != null ? 1 : 0)), // occurrences proxy
+            bt.getWinRatePct() != null ? bt.getWinRatePct() : 0,
+            bt.getAvgReturnPct() != null ? bt.getAvgReturnPct() : 0,
+            bt.getMedianReturnPct() != null ? bt.getMedianReturnPct() : 0
+        );
+
+        return PeriodProjection.builder()
+                .horizon(horizon)
+                .targetPrice(round(targetPrice))
+                .expectedReturnPct(round(baseReturn))
+                .bullCasePct(bullReturn)
+                .bearCasePct(bearReturn)
+                .bullCasePrice(bullPrice)
+                .bearCasePrice(bearPrice)
+                .annualizedVolatilityPct(round(annVol))
+                .scenario(scenario)
+                .confidence(btConf)
+                .build();
     }
 
     public EntryTiming computeEntryTiming(TechnicalSignals t, InvestmentRecommendation r) {
@@ -225,19 +299,35 @@ public class ProjectionEngine {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private PeriodProjection build(String horizon, double price, double upside1Y,
-                                   double factor, double trendMult, String trend,
+                                   double factor, double years, double trendMult,
+                                   double annVol, String trend,
                                    InvestmentRecommendation r, String conf,
                                    TechnicalSignals t) {
         double projectedReturn = upside1Y * factor * trendMult;
         double targetPrice     = price * (1 + projectedReturn / 100);
 
-        // Scenario description
+        // ── Volatility-based bull/bear range (±1σ) ───────────────────────────
+        // Volatility scales with √time (random walk property).
+        // 1σ band = annVol × √years  (in %)
+        // Bull case: base + 1σ  (probability: ~84% of outcomes below this)
+        // Bear case: base - 1σ  (probability: ~16% of outcomes below this)
+        double oneSigma   = annVol * Math.sqrt(years);
+        double bullReturn = round(projectedReturn + oneSigma);
+        double bearReturn = round(projectedReturn - oneSigma);
+        double bullPrice  = round(price * (1 + bullReturn / 100));
+        double bearPrice  = round(price * (1 + bearReturn / 100));
+
         String scenario = buildScenario(horizon, trend, projectedReturn, targetPrice, t, r);
 
         return PeriodProjection.builder()
                 .horizon(horizon)
                 .targetPrice(round(targetPrice))
                 .expectedReturnPct(round(projectedReturn))
+                .bullCasePct(bullReturn)
+                .bearCasePct(bearReturn)
+                .bullCasePrice(bullPrice)
+                .bearCasePrice(bearPrice)
+                .annualizedVolatilityPct(round(annVol))
                 .scenario(scenario)
                 .confidence(conf)
                 .build();

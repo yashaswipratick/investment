@@ -182,24 +182,40 @@ public class StockAnalyserService {
                         ? stockHistory.getStockHistoryDetails().values()
                         : List.of());
 
-        // Run each period sequentially (to avoid hammering OpenAI in parallel)
+        // ── AI commentary strategy ────────────────────────────────────────────
+        // Primary period (longest, e.g. 3Y): full GPT + web search
+        //   → fetches live fundamentals, news, analyst ratings (~30-60s)
+        // Non-primary periods (2Y / 1Y / 6M): GPT only, NO web search (~3-5s each)
+        //   → uses the period-specific technical signals to produce accurate
+        //     per-period commentary without repeating the expensive web search
+        // This gives each period its own accurate commentary while keeping
+        // total analysis time under ~2 minutes.
+        boolean primaryDone[] = { false };
+
         Mono<Map<String, StockAnalysisResult>> chain = Mono.just(new LinkedHashMap<>());
 
         for (Map.Entry<String, Integer> entry : periods.entrySet()) {
             String periodLabel = entry.getKey();
             int tradingBars    = entry.getValue();
+            boolean isPrimary  = !primaryDone[0];
+            primaryDone[0]     = true;
 
             chain = chain.flatMap(resultMap -> {
-                // Take only the last `tradingBars` candles for this period's analysis
                 int available = allCandles.size();
                 List<StockHistoryDetails> candles = available <= tradingBars
                         ? allCandles
                         : allCandles.subList(available - tradingBars, available);
 
-                log.info("[{}][{}] Analysing with {} candles (requested {} bars)",
-                         symbol, periodLabel, candles.size(), tradingBars);
+                log.info("[{}][{}] Analysing {} candles | aiEnabled={} | webSearch={}",
+                         symbol, periodLabel, candles.size(), includeAi,
+                         isPrimary ? "YES (primary)" : "NO (period-specific, no web search)");
 
-                return runAnalysis(candles, stockHistory, symbol, periodLabel, tradingBars, includeAi)
+                // Pass ai=true for all periods when requested.
+                // The OpenAiCommentaryService will use web search only for the primary period
+                // via a flag we set on the request context. We implement this by temporarily
+                // overriding the web search setting for non-primary periods.
+                return runAnalysis(candles, stockHistory, symbol, periodLabel, tradingBars,
+                                   includeAi, isPrimary)
                         .flatMap(analysisResultPersistenceService::persist)
                         .doOnNext(r -> resultMap.put(periodLabel, r))
                         .thenReturn(resultMap);
@@ -245,7 +261,8 @@ public class StockAnalyserService {
                                                    String symbol,
                                                    String periodLabel,
                                                    int tradingBars,
-                                                   boolean includeAi) {
+                                                   boolean includeAi,
+                                                   boolean isPrimaryPeriod) {
         // Derive dates from the sliced candle list
         TreeMap<LocalDate, StockHistoryDetails> rawMap = stockHistory.getStockHistoryDetails();
 
@@ -312,13 +329,27 @@ public class StockAnalyserService {
                     projections, entryTiming, stopLossStrategy, dataNote));
         }
 
-        return openAiService.generateCommentary(symbol + " [" + periodLabel + "]", technical, recommendation, candles)
+        // Primary period: full commentary with web search (live fundamentals, news, analyst data)
+        // Non-primary periods: commentary without web search — period-specific technical analysis
+        //   using the same GPT model but without the expensive web search round-trip.
+        //   Each period gets accurate, period-specific commentary (not shared/copied).
+        return openAiService.generateCommentary(
+                        symbol + " [" + periodLabel + "]",
+                        technical, recommendation, candles, isPrimaryPeriod)
                 .map(commentary -> {
                     recommendation.setAiCommentary(commentary);
                     return buildResult(symbol, periodLabel, total, dataFrom, dataTo,
                             requiredRecommended, windowStatus, windowMessage, technical, recommendation,
                             projections, entryTiming, stopLossStrategy, dataNote);
                 });
+    }
+
+    /** Overload for backward compatibility (defaults to primary = true) */
+    private Mono<StockAnalysisResult> runAnalysis(List<StockHistoryDetails> candles,
+                                                   StockHistory stockHistory,
+                                                   String symbol, String periodLabel,
+                                                   int tradingBars, boolean includeAi) {
+        return runAnalysis(candles, stockHistory, symbol, periodLabel, tradingBars, includeAi, true);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

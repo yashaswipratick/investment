@@ -198,17 +198,31 @@ public class OpenAiCommentaryService {
                 masked, modelName, serviceTier, apiKeyFilePath, apiKeyValid, apiKeyValidationMessage);
     }
 
+    /**
+     * Generates AI commentary for a stock period.
+     *
+     * @param isPrimaryPeriod true for the longest period (e.g. 3Y) — triggers web search
+     *                        for live fundamentals/news/analyst data.
+     *                        false for shorter periods (2Y/1Y/6M) — GPT only, no web search,
+     *                        period-specific technical commentary. Fast (~3-5s).
+     */
     public Mono<String> generateCommentary(String symbol, TechnicalSignals technical,
                                            InvestmentRecommendation recommendation,
-                                           List<StockHistoryDetails> periodCandles) {
+                                           List<StockHistoryDetails> periodCandles,
+                                           boolean isPrimaryPeriod) {
         if (resolvedApiKey.isBlank() || !apiKeyValid) {
             log.info("OpenAI API key unavailable/invalid. Skipping AI commentary for {}", symbol);
             return Mono.just("");
         }
 
+        // Web search is expensive (~15-30s). Only run it for the primary (longest) period
+        // where live fundamentals/news are most relevant.
+        // Non-primary periods get fast, period-specific technical commentary without web search.
+        boolean useWebSearch = webSearchEnabled && isPrimaryPeriod;
+
         String prompt = buildPrompt(symbol, technical, recommendation, periodCandles);
-        log.debug("[OpenAI][{}] Sending prompt to {} (model={}, serviceTier={}):\n{}",
-                  symbol, OPENAI_URL, modelName, serviceTier, prompt);
+        log.info("[OpenAI][{}] Generating commentary | webSearch={} | primary={}",
+                  symbol, useWebSearch, isPrimaryPeriod);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", modelName);
@@ -217,20 +231,19 @@ public class OpenAiCommentaryService {
                 Map.of("role", "user",   "content", prompt)
         ));
         // ── Web search tool ───────────────────────────────────────────────────
-        // When enabled, GPT autonomously searches for live fundamentals, earnings,
-        // analyst ratings and recent news before writing commentary.
-        // This eliminates the need to fetch external data on the server side.
-        if (webSearchEnabled) {
+        if (useWebSearch) {
             body.put("tools", List.of(Map.of("type", "web_search_preview")));
-            log.debug("[OpenAI][{}] web_search_preview tool enabled", symbol);
+            log.debug("[OpenAI][{}] web_search_preview tool enabled (primary period)", symbol);
+        } else {
+            log.debug("[OpenAI][{}] web_search_preview skipped (non-primary period)", symbol);
         }
 
         // ── Token limit ───────────────────────────────────────────────────────
         // Web search needs extra tokens: search calls + reading results + reasoning + output.
         // Without search: reasoning models need ~4000; classic models need ~600.
         int maxTokens;
-        if (webSearchEnabled) {
-            maxTokens = maxTokensWithSearch;  // e.g. 6000 — covers search + reasoning + output
+        if (useWebSearch) {
+            maxTokens = maxTokensWithSearch;           // 6000 — covers search + reasoning + output
         } else {
             maxTokens = isReasoningModel(modelName) ? maxTokensReasoning : maxTokensClassic;
         }
@@ -281,6 +294,13 @@ public class OpenAiCommentaryService {
                     log.error("OpenAI call failed for {}: {}", symbol, e.getMessage());
                     return Mono.just("AI commentary unavailable.");
                 });
+    }
+
+    /** Backward-compatible overload — defaults to primary period (web search enabled) */
+    public Mono<String> generateCommentary(String symbol, TechnicalSignals technical,
+                                           InvestmentRecommendation recommendation,
+                                           List<StockHistoryDetails> periodCandles) {
+        return generateCommentary(symbol, technical, recommendation, periodCandles, true);
     }
 
     public boolean isApiKeyValid() {

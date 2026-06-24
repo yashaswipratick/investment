@@ -9,11 +9,17 @@ server:
   compression:
     enabled: true
     min-response-size: 2048
+  tomcat:
+    # Must be >= spring.mvc.async.request-timeout to avoid premature connection close
+    connection-timeout: 600000
 
 spring:
   mvc:
     async:
-      request-timeout: 180000 # 3 minutes for long-running analyser requests
+      # Increased to 10 minutes — analyse endpoint fetches NSE history (12+ chunks),
+      # runs 4 period analyses, and calls OpenAI with web search for each period.
+      # Total wall-clock time for a new symbol can reach 4-8 minutes.
+      request-timeout: 600000
     pathmatch:
       matching-strategy: ant_path_matcher
   cassandra:

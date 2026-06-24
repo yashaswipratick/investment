@@ -35,4 +35,29 @@ public class PeriodProjection {
      * Longer horizons depend on trend sustainability.
      */
     private String confidence;
+
+    // ── Volatility-based range (±1σ) ─────────────────────────────────────────
+    /**
+     * Bull case return % (base + 1σ volatility for the horizon).
+     * Probability: ~84% of outcomes are below this level.
+     */
+    private Double bullCasePct;
+
+    /**
+     * Bear case return % (base - 1σ volatility for the horizon).
+     * Probability: ~16% of outcomes are below this level.
+     */
+    private Double bearCasePct;
+
+    /** Bull case price target */
+    private Double bullCasePrice;
+
+    /** Bear case price target */
+    private Double bearCasePrice;
+
+    /**
+     * Annualised historical volatility used for this projection (%).
+     * e.g. 35.0 means the stock typically swings ±35% per year (1σ).
+     */
+    private Double annualizedVolatilityPct;
 }
