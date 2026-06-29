@@ -219,17 +219,45 @@ public class InvestmentSignalEngine {
         else                  { action = "AVOID"; timeframe = "LONG_TERM"; }
 
         // ── Entry zone ────────────────────────────────────────────────────────
-        // Entry low = support level or current price - 2% cushion
-        double entryLow  = t.getSupportLevel() != null && t.getSupportLevel() > 0
-                           ? t.getSupportLevel()
-                           : price * 0.98;
-        double entryHigh = price * 1.01;  // Allow up to 1% above current price
+        // A practical entry zone is a TIGHT band near the current price —
+        // not the entire distance from support to current price.
+        //
+        // Logic:
+        //   entryHigh = current price (fair to enter at market)
+        //   entryLow  = max(current price - 4%, nearest meaningful support)
+        //               → capped so spread never exceeds 5% of price (max ~₹100 on ₹2000 stock)
+        //
+        // "Nearest meaningful support" = the closer of:
+        //   a) 20-day SMA (dynamic support)
+        //   b) Lower Bollinger Band (volatility-adjusted support)
+        //   c) 4% below current price (hard cap)
+        double maxSpreadPct = 0.04; // max 4% spread on entry zone
+        double candidateLow = price * (1 - maxSpreadPct);
+
+        // Use the closer of SMA20 and BB lower as support, only if it's within the 4% band
+        if (t.getSma20() != null && t.getSma20() > candidateLow && t.getSma20() < price) {
+            candidateLow = t.getSma20();
+        }
+        if (t.getBbMiddle() != null && t.getBbMiddle() > candidateLow && t.getBbMiddle() < price) {
+            candidateLow = t.getBbMiddle(); // prefer mid-band as near-term support
+        }
+
+        double entryLow  = round(candidateLow);
+        double entryHigh = round(price * 1.005); // allow up to 0.5% above current (slippage)
+
+        // Ensure spread never exceeds 5% regardless (safety cap)
+        if ((entryHigh - entryLow) / price > 0.05) {
+            entryLow = round(entryHigh * (1 - 0.04));
+        }
 
         // ── Stop-loss ─────────────────────────────────────────────────────────
-        // Place below lower Bollinger Band or support - 2%, whichever is lower
-        double bbLower = t.getBbLower() != null ? t.getBbLower() : price * 0.95;
-        double stopLoss = Math.min(bbLower, entryLow * 0.97);
-        stopLoss = Math.max(stopLoss, price * 0.90); // never more than 10% below current price
+        // Place at the LOWER of:
+        //   a) Lower Bollinger Band (statistical support)
+        //   b) 6% below entry low (max acceptable loss from entry)
+        // Never more than 10% below current price.
+        double bbLower  = t.getBbLower() != null ? t.getBbLower() : price * 0.94;
+        double stopLoss = Math.min(bbLower, entryLow * 0.94);
+        stopLoss = Math.max(stopLoss, price * 0.90); // hard cap: never risk more than 10%
 
         // ── Target price ─────────────────────────────────────────────────────
         // Use resistance if meaningful; else use 1.5 * risk above entry
