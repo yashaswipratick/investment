@@ -17,6 +17,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.ArrayList;
 import java.util.Comparator;
 
 /**
@@ -180,7 +181,21 @@ public class StockAnalyserController {
             @RequestParam(defaultValue = "1Y") String period,
             @RequestParam(defaultValue = "10") int topN) {
 
+        // Cassandra clustering is (period_label, analysis_date DESC) so the first row
+        // per symbol is always the latest. We deduplicate here to avoid showing the
+        // same symbol twice when it was analysed on multiple days.
         return resultRepository.findAllByPeriodLabel(period)
+                // Deduplicate: keep only the LATEST analysis_date per symbol
+                .collectMultimap(e -> e.getKey().getSymbol())   // group by symbol
+                .flatMapMany(multimap -> {
+                    List<com.stock.stock_analyser.dto.StockAnalysisResultEntity> latest = new ArrayList<>();
+                    for (var entries : multimap.values()) {
+                        entries.stream()
+                                .max(Comparator.comparing(e -> e.getKey().getAnalysisDate()))
+                                .ifPresent(latest::add);
+                    }
+                    return reactor.core.publisher.Flux.fromIterable(latest);
+                })
                 .map(entity -> {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("symbol",      entity.getKey().getSymbol());

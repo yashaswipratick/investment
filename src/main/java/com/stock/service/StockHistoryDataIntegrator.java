@@ -325,9 +325,16 @@ public class StockHistoryDataIntegrator {
     }
 
     /**
-     * Considers a chunk covered when existing data has at least 75% weekday coverage.
-     * This avoids unnecessary NSE calls for tiny holiday gaps while still fetching
-     * genuinely missing chunks.
+     * Considers a chunk covered when:
+     *   1. The existing data has at least 75% weekday coverage for the chunk, AND
+     *   2. For the LAST (most recent) chunk that overlaps with today:
+     *      the latest data point is within 5 calendar days of the chunk's end date.
+     *      This prevents treating a chunk as "covered" when it ends today but
+     *      the DB only has data up to several trading days ago.
+     *
+     * Without rule 2, a chunk from Apr–Jun with data up to Jun 25 is counted as
+     * "covered" (92% weekdays present) even when Jun 26–29 are missing, causing
+     * the integrator to skip the NSE fetch and leave the DB stale.
      */
     private static boolean isChunkCovered(TreeMap<LocalDate, StockHistoryDetails> existing,
                                           LocalDate chunkFrom,
@@ -352,7 +359,31 @@ public class StockHistoryDataIntegrator {
                 .count();
 
         double coverage = (presentWeekdays * 100.0) / weekdays;
-        return coverage >= thresholdPct;
+        if (coverage < thresholdPct) {
+            return false; // not enough data for this chunk
+        }
+
+        // ── Rule 2: recency check for the trailing (most recent) chunk ─────────
+        // If the chunk's end date is within 7 calendar days of today, verify the
+        // DB's latest date for this chunk is also recent (within 5 trading days
+        // of the chunk end). This catches the "stale last chunk" case where the
+        // coverage threshold passes (e.g. 92%) but the last few trading days
+        // (e.g. Jun 26–29) are missing from the DB.
+        LocalDate today = LocalDate.now();
+        if (!chunkTo.isBefore(today.minusDays(7))) {
+            // This is a recent chunk — also verify it has the latest data
+            LocalDate latestInChunk = sub.lastKey();
+            long daysGap = java.time.temporal.ChronoUnit.DAYS.between(latestInChunk, chunkTo);
+            // Allow up to 5 calendar days gap (covers weekends + 1-2 holidays)
+            // Allow only up to 3 calendar days gap: covers Fri→Mon (3 days) but catches
+            // any weekday gap of 2+ trading days (Mon: Fri→Mon=3 days is OK,
+            // Thu: data up to Mon = 3 days = stale needs re-fetch).
+            if (daysGap > 3) {
+                return false; // latest data is too old — need to re-fetch this chunk
+            }
+        }
+
+        return true;
     }
 
     private static long countWeekdays(LocalDate from, LocalDate to) {

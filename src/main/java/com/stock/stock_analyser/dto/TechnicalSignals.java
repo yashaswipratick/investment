@@ -1,7 +1,10 @@
 package com.stock.stock_analyser.dto;
 
 import com.stock.stock_analyser.dto.BacktestResult;
+import com.stock.stock_analyser.engine.BreakoutResult;
 import com.stock.stock_analyser.engine.CandlestickSignals;
+import com.stock.stock_analyser.engine.ChartPatternResult;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -82,6 +85,14 @@ public class TechnicalSignals {
      * Included in API response so clients know which window the change covers.
      */
     private String priceChangePeriodLabel;
+
+    // ── Breakout Analysis ────────────────────────────────────────────────────
+    /** Most recent breakout detection — when it happened and whether it was retested */
+    private BreakoutResult breakoutAnalysis;
+
+    // ── Chart Patterns (6-month) ─────────────────────────────────────────────
+    /** Classical chart patterns detected in the last 6 months */
+    private List<ChartPatternResult> chartPatterns;
 
     // ── Backtesting ──────────────────────────────────────────────────────────
     /**

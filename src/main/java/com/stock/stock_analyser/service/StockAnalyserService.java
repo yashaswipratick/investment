@@ -20,7 +20,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -111,13 +114,40 @@ public class StockAnalyserService {
                             && !details.firstKey().isAfter(requiredFrom);
 
                     // ── Check 2: is the DB up-to-date? ────────────────────────
-                    // NSE publishes data after market close (typically by 6 PM IST).
-                    // Allow a 3-day tolerance to account for weekends/holidays.
-                    // If the latest candle is older than 3 calendar days, the DB is stale
-                    // and we must fetch the recent missing days from NSE.
+                    // NSE publishes candle data after market close (~6:30 PM IST).
+                    //
+                    // Logic:
+                    //   Weekday AFTER 6:30 PM IST  → today's data is published; fetch if lastKey < today
+                    //   Weekday BEFORE 6:30 PM IST → yesterday's data is the latest; fetch if lastKey < yesterday
+                    //   Monday (any time)           → Friday is last trading day; fetch if lastKey < Friday
+                    //   Saturday / Sunday           → Friday data is current; fetch if lastKey < Friday
+                    ZonedDateTime istNow     = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
+                    DayOfWeek     dow        = istNow.getDayOfWeek();
+                    int           hourIST    = istNow.getHour();
+                    boolean afterMarketClose = hourIST >= 18; // 6 PM IST = data published
+
+                    // Compute the most recent expected trading day
+                    LocalDate expectedLatest;
+                    if (dow == DayOfWeek.SATURDAY) {
+                        expectedLatest = today.minusDays(1); // Friday
+                    } else if (dow == DayOfWeek.SUNDAY) {
+                        expectedLatest = today.minusDays(2); // Friday
+                    } else if (dow == DayOfWeek.MONDAY) {
+                        expectedLatest = today.minusDays(3); // Friday
+                    } else if (afterMarketClose) {
+                        expectedLatest = today;              // Tue–Fri after 6 PM: today is available
+                    } else {
+                        expectedLatest = today.minusDays(1); // Tue–Fri before 6 PM: yesterday is latest
+                    }
+
+                    // isRecent = true only if DB has data up to (or beyond) the expected latest trading day
                     boolean isRecent = details != null
                             && !details.isEmpty()
-                            && !details.lastKey().isBefore(today.minusDays(3));
+                            && !details.lastKey().isBefore(expectedLatest);
+
+                    log.info("Staleness check for {} | lastKey={} | today={} | dayOfWeek={} | afterClose={} | expectedLatest={} | isRecent={}",
+                            symbol, details != null && !details.isEmpty() ? details.lastKey() : "N/A",
+                            today, dow, afterMarketClose, expectedLatest, isRecent);
 
                     if (coversHistory && isRecent) {
                         log.info("Cassandra covers full window for {} (earliest: {}, latest: {}). Skipping NSE fetch.",

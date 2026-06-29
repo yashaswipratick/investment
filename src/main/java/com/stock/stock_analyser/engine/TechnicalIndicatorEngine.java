@@ -3,6 +3,7 @@ package com.stock.stock_analyser.engine;
 import com.stock.dto.StockHistoryDetails;
 import com.stock.stock_analyser.dto.BacktestResult;
 import com.stock.stock_analyser.dto.TechnicalSignals;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -29,8 +30,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TechnicalIndicatorEngine {
 
-    private final CandlestickEngine candlestickEngine;
-    private final BacktestEngine    backtestEngine;
+    private final CandlestickEngine  candlestickEngine;
+    private final BacktestEngine     backtestEngine;
+    private final BreakoutEngine     breakoutEngine;
+    private final ChartPatternEngine chartPatternEngine;
 
     // ─── Public entry point ────────────────────────────────────────────────────
 
@@ -189,6 +192,12 @@ public class TechnicalIndicatorEngine {
                 n > 1 ? sma(closes, 50,  n - 1) : sma50,
                 n > 1 ? sma(closes, 200, n - 1) : sma200);
 
+        // ─── Breakout analysis ────────────────────────────────────────────────
+        BreakoutResult breakoutResult = breakoutEngine.analyse(candles);
+
+        // ─── Chart pattern detection (6-month window) ─────────────────────────
+        List<ChartPatternResult> chartPatterns = chartPatternEngine.detectPatterns(candles);
+
         // ─── Build intermediate signals for backtest fingerprint ──────────────
         // (backtest needs RSI, MACD, trend, BB — computed above — to fingerprint the current bar)
         TechnicalSignals partialSignals = TechnicalSignals.builder()
@@ -212,6 +221,8 @@ public class TechnicalIndicatorEngine {
         CandlestickSignals csSignals = candlestickEngine.analyse(candles);
 
         return TechnicalSignals.builder()
+                .breakoutAnalysis(breakoutResult)
+                .chartPatterns(chartPatterns)
                 .backtestResult(backtestResult)
                 .annualizedVolatilityPct(round(annualizedVol))
                 .candlestickSignals(csSignals)
