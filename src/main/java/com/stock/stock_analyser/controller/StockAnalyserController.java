@@ -1,7 +1,9 @@
 package com.stock.stock_analyser.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stock.dto.key.StockHistoryKey;
 import com.stock.repository.StockAnalysisResultRepository;
+import com.stock.service.StockHistoryDataService;
 import com.stock.stock_analyser.dto.InvestmentRecommendation;
 import com.stock.stock_analyser.dto.StockAnalysisRequest;
 import com.stock.stock_analyser.dto.StockAnalysisResult;
@@ -36,8 +38,9 @@ import java.util.Comparator;
 @RequestMapping("/stock/investment/v1.0/stockAnalyser")
 public class StockAnalyserController {
 
-    private final StockAnalyserService analyserService;
-    private final OpenAiCommentaryService openAiCommentaryService;
+    private final StockAnalyserService       analyserService;
+    private final OpenAiCommentaryService    openAiCommentaryService;
+    private final StockHistoryDataService    stockHistoryDataService;
     private final StockAnalysisResultRepository resultRepository;
     private final ObjectMapper objectMapper;
 
@@ -119,6 +122,10 @@ public class StockAnalyserController {
      */
     @GetMapping(value = "/result/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getResult(@PathVariable String symbol) {
+        // Cassandra clustering is (period_label ASC, analysis_date DESC) so the FIRST
+        // row per period is always the latest. We collect all rows, then keep only the
+        // one with the MAX analysis_date per period to avoid the stale-data bug where
+        // collectMap overwrites newer data with older data.
         return resultRepository.findAllByPeriodLabel("1Y")
                 .filter(e -> e.getKey().getSymbol().equalsIgnoreCase(symbol))
                 .mergeWith(resultRepository.findAllByPeriodLabel("2Y")
@@ -127,36 +134,44 @@ public class StockAnalyserController {
                         .filter(e -> e.getKey().getSymbol().equalsIgnoreCase(symbol)))
                 .mergeWith(resultRepository.findAllByPeriodLabel("6M")
                         .filter(e -> e.getKey().getSymbol().equalsIgnoreCase(symbol)))
-                .collectMap(
-                        e -> e.getKey().getPeriodLabel(),
-                        e -> {
-                            Map<String, Object> m = new LinkedHashMap<>();
-                            m.put("symbol",        e.getKey().getSymbol());
-                            m.put("periodLabel",   e.getKey().getPeriodLabel());
-                            m.put("analysisDate",  e.getKey().getAnalysisDate());
-                            m.put("windowStatus",  e.getWindowStatus());
-                            m.put("windowMessage", e.getWindowMessage());
-                            m.put("totalDataPoints", e.getTotalDataPoints());
-                            m.put("dataNote",        e.getDataNote());
-                            m.put("dataFrom",        e.getDataFrom());
-                            m.put("dataTo",          e.getDataTo());
-                            try {
-                                if (e.getRecommendationJson() != null)
-                                    m.put("recommendation", objectMapper.readValue(e.getRecommendationJson(), Object.class));
-                                if (e.getTechnicalJson() != null)
-                                    m.put("technical", objectMapper.readValue(e.getTechnicalJson(), Object.class));
-                                if (e.getProjectionsJson() != null)
-                                    m.put("projections", objectMapper.readValue(e.getProjectionsJson(), Object.class));
-                                if (e.getEntryTimingJson() != null)
-                                    m.put("entryTiming", objectMapper.readValue(e.getEntryTimingJson(), Object.class));
-                                if (e.getStopLossStrategyJson() != null)
-                                    m.put("stopLossStrategy", objectMapper.readValue(e.getStopLossStrategyJson(), Object.class));
-                            } catch (Exception ex) {
-                                log.warn("Failed to parse JSON for {}: {}", symbol, ex.getMessage());
-                            }
-                            return (Object) m;
-                        }
-                )
+                // Group by periodLabel and keep only the row with the latest analysisDate
+                .collectMultimap(e -> e.getKey().getPeriodLabel())
+                .map(multimap -> {
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    multimap.forEach((period, rows) -> {
+                        // Pick the row with the highest (most recent) analysis_date
+                        rows.stream()
+                                .max(java.util.Comparator.comparing(e -> e.getKey().getAnalysisDate()))
+                                .ifPresent(e -> {
+                                    Map<String, Object> m = new LinkedHashMap<>();
+                                    m.put("symbol",          e.getKey().getSymbol());
+                                    m.put("periodLabel",     e.getKey().getPeriodLabel());
+                                    m.put("analysisDate",    e.getKey().getAnalysisDate());
+                                    m.put("windowStatus",    e.getWindowStatus());
+                                    m.put("windowMessage",   e.getWindowMessage());
+                                    m.put("totalDataPoints", e.getTotalDataPoints());
+                                    m.put("dataNote",        e.getDataNote());
+                                    m.put("dataFrom",        e.getDataFrom());
+                                    m.put("dataTo",          e.getDataTo());
+                                    try {
+                                        if (e.getRecommendationJson() != null)
+                                            m.put("recommendation", objectMapper.readValue(e.getRecommendationJson(), Object.class));
+                                        if (e.getTechnicalJson() != null)
+                                            m.put("technical", objectMapper.readValue(e.getTechnicalJson(), Object.class));
+                                        if (e.getProjectionsJson() != null)
+                                            m.put("projections", objectMapper.readValue(e.getProjectionsJson(), Object.class));
+                                        if (e.getEntryTimingJson() != null)
+                                            m.put("entryTiming", objectMapper.readValue(e.getEntryTimingJson(), Object.class));
+                                        if (e.getStopLossStrategyJson() != null)
+                                            m.put("stopLossStrategy", objectMapper.readValue(e.getStopLossStrategyJson(), Object.class));
+                                    } catch (Exception ex) {
+                                        log.warn("Failed to parse JSON for {} [{}]: {}", symbol, period, ex.getMessage());
+                                    }
+                                    result.put(period, m);
+                                });
+                    });
+                    return result;
+                })
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> Mono.just(ResponseEntity.internalServerError().build()));
     }
@@ -265,6 +280,48 @@ public class StockAnalyserController {
                     log.error("Screener failed: {}", e.getMessage());
                     return Mono.just(ResponseEntity.internalServerError().build());
                 });
+    }
+
+    /**
+     * Latest close price from Cassandra stock_history table — no external API needed.
+     * GET /stock/investment/v1.0/stockAnalyser/latest-price/{symbol}
+     */
+    @GetMapping(value = "/latest-price/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> getLatestPrice(@PathVariable String symbol) {
+        StockHistoryKey key = StockHistoryKey.builder().key(symbol.toUpperCase().trim()).build();
+        Mono<ResponseEntity<Map<String, Object>>> fetch = stockHistoryDataService.get(key)
+                .map(sh -> buildLatestPriceResponse(symbol, sh));
+        Mono<ResponseEntity<Map<String, Object>>> empty = Mono.just(
+                ResponseEntity.<Map<String, Object>>status(404).build());
+        return fetch.switchIfEmpty(empty)
+                .onErrorResume(e -> {
+                    log.warn("latest-price failed for {}: {}", symbol, e.getMessage());
+                    Map<String, Object> err = new LinkedHashMap<>();
+                    err.put("error", e.getMessage());
+                    return Mono.just(ResponseEntity.<Map<String, Object>>status(502).body(err));
+                });
+    }
+
+    private ResponseEntity<Map<String, Object>> buildLatestPriceResponse(
+            String symbol, com.stock.dto.StockHistory sh) {
+        var details = sh.getStockHistoryDetails();
+        if (details == null || details.isEmpty()) {
+            return ResponseEntity.<Map<String, Object>>status(404).build();
+        }
+        var latestDate   = details.lastKey();
+        var latestCandle = details.get(latestDate);
+        Double close     = latestCandle.getClose();
+        var prevEntry    = details.lowerEntry(latestDate);
+        Double prev      = prevEntry != null ? prevEntry.getValue().getClose() : null;
+        double chg       = (close != null && prev != null && prev > 0)
+                           ? (close - prev) / prev * 100 : 0;
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("symbol",        symbol.toUpperCase());
+        m.put("latestDate",    latestDate.toString());
+        m.put("closePrice",    close != null ? Math.round(close * 100.0) / 100.0 : null);
+        m.put("prevClose",     prev  != null ? Math.round(prev  * 100.0) / 100.0 : null);
+        m.put("changePercent", Math.round(chg * 100.0) / 100.0);
+        return ResponseEntity.ok(m);
     }
 
     /**
