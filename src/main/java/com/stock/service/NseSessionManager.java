@@ -1,82 +1,152 @@
 package com.stock.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import java.io.IOException;
+import java.nio.file.Files;
 
 @Slf4j
 @Service
 public class NseSessionManager {
 
-    private static final String BASE_URL = "https://www.nseindia.com/";
-    private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
-    private static final String ACCEPT_LANGUAGE = "en-GB,en-US;q=0.9,en;q=0.8";
-    private static final String ACCEPT_ENCODING = "gzip, deflate";
 
+    private static final String BASE_URL = "https://www.nseindia.com/";
+
+    private static final String USER_AGENT =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/137.0.0.0 Safari/537.36";
+
+    private static final String ACCEPT_LANGUAGE =
+            "en-GB,en-US;q=0.9,en;q=0.8";
+
+    private static final String ACCEPT_ENCODING =
+            "gzip, deflate";
 
     /**
-     * Generates a fresh NSE session cookie by making a warm-up GET request to NSE homepage.
-     * This extracts the Set-Cookie headers and returns them as a single cookie string.
-     * No file dependency needed - cookies are generated on-demand from NSE.
-     *
-     * @return Mono containing the NSE session cookie string (e.g., "AKA_A2=A; bm_sz=...")
+     * File should exist at:
+     * src/main/resources/cookie.txt
      */
-    public Mono<String> generateFreshSessionCookie() {
-        WebClient client = buildWebClient();
+    private static final String COOKIE_CLASSPATH_RESOURCE = "cookie.txt";
 
-        return client.get()
-                .retrieve()
-                .toBodilessEntity()
-                .map(entity -> {
-                    // Extract Set-Cookie headers
-                    List<String> setCookieHeaders = entity.getHeaders().getOrEmpty(HttpHeaders.SET_COOKIE);
+    @Autowired
+    private BrowserCookieService browserCookieService;
 
-                    if (setCookieHeaders.isEmpty()) {
-                        log.warn("NSE warm-up call returned no Set-Cookie headers. Using empty cookie.");
-                        return "";
-                    }
+    /**
+     * Read optional cookie file.
+     */
+    public String readCookieFromFile() {
 
-                    // Merge all Set-Cookie values into a single string
-                    // Each Set-Cookie header is like: "AKA_A2=A; Path=/; HttpOnly"
-                    // We extract just the cookie name=value part before the first semicolon
-                    String mergedCookie = setCookieHeaders.stream()
-                            .map(setCookie -> {
-                                // Extract just "AKA_A2=A" from "AKA_A2=A; Path=/; HttpOnly"
-                                int semiIndex = setCookie.indexOf(';');
-                                return semiIndex > 0
-                                        ? setCookie.substring(0, semiIndex).trim()
-                                        : setCookie.trim();
-                            })
-                            .collect(Collectors.joining("; "));
+        try {
 
-                    log.info("✅ Generated fresh NSE session cookie from warm-up call ({})", mergedCookie.length());
-                    return mergedCookie;
-                })
-                .doOnError(e -> log.warn("⚠️ Failed to generate fresh NSE session cookie: {}. Using empty cookie.", e.getMessage()))
-                .onErrorResume(e -> Mono.just("")); // Return empty cookie if warm-up fails
+            ClassPathResource resource =
+                    new ClassPathResource(COOKIE_CLASSPATH_RESOURCE);
+
+            if (!resource.exists()) {
+                log.info("cookie.txt not found. Continuing with browser cookies only.");
+                return "";
+            }
+
+            String content =
+                    new String(Files.readAllBytes(resource.getFile().toPath()))
+                            .trim();
+
+            if (!content.isBlank()) {
+                log.info("Loaded cookie.txt ({} chars)", content.length());
+            }
+
+            return content;
+
+        } catch (IOException e) {
+
+            log.warn("Unable to read cookie.txt: {}", e.getMessage());
+
+            return "";
+        }
     }
 
     /**
-     * Builds a WebClient for NSE warm-up calls (direct connection, no proxy).
+     * Main cookie provider.
+     *
+     * Uses Playwright generated cookies.
+     * Optionally appends cookie.txt contents.
      */
-    private WebClient buildWebClient() {
-        HttpClient httpClient = HttpClient.create().followRedirect(true);
+    public Mono<String> generateCookieUsingBrowserAutomation() {
 
+        return browserCookieService.getNseCookies()
+                .map(browserCookie -> {
+
+                    if (browserCookie == null || browserCookie.isBlank()) {
+
+                        log.warn("⚠️ Playwright returned empty cookie");
+
+                        return "";
+                    }
+
+                    log.info("✅ Using Playwright generated NSE cookies");
+
+                    String fileCookie = readCookieFromFile();
+
+                    if (fileCookie == null || fileCookie.isBlank()) {
+
+                        log.info("✅ Using browser cookies only");
+
+                        return browserCookie;
+                    }
+
+                    String mergedCookie =
+                            browserCookie + "; " + fileCookie;
+
+                    log.info("✅ Browser cookie + cookie.txt merged");
+
+                    return mergedCookie;
+                })
+                .doOnError(error ->
+                        log.error("❌ Failed to obtain browser cookies",
+                                error))
+                .onErrorReturn("");
+    }
+
+    /**
+     * Retained only if some legacy code still calls it.
+     * Delegates directly to browser automation.
+     */
+    public Mono<String> generateCookieWithFileAppended() {
+        return generateCookieUsingBrowserAutomation();
+    }
+
+    /**
+     * Retained only if some old service still invokes it.
+     * Delegates directly to browser automation.
+     */
+    public Mono<String> generateFreshSessionCookie() {
+        return generateCookieUsingBrowserAutomation();
+    }
+
+    /**
+     * Standard NSE WebClient builder.
+     */
+    public WebClient buildWebClient() {
+
+        HttpClient httpClient = HttpClient.create()
+                .followRedirect(true);
 
         return WebClient.builder()
                 .baseUrl(BASE_URL)
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .clientConnector(
+                        new ReactorClientHttpConnector(httpClient))
                 .defaultHeader("User-Agent", USER_AGENT)
                 .defaultHeader("Accept-Language", ACCEPT_LANGUAGE)
                 .defaultHeader("Accept-Encoding", ACCEPT_ENCODING)
                 .build();
     }
-}
 
+
+}

@@ -24,7 +24,13 @@ from urllib.parse import quote
 
 
 NSE_BASE = "https://www.nseindia.com"
-DEFAULT_OUTPUT_DIR = "/Users/y0p03mn/preparation/investment-stock-market/investment/src/main/resources/historical-data"
+
+# Determine paths relative to script location (portable across environments)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESOURCES_DIR = os.path.join(SCRIPT_DIR, "..", "src", "main", "resources")
+DEFAULT_OUTPUT_DIR = os.path.join(RESOURCES_DIR, "historical-data")
+COOKIE_FILE_PATH = os.path.join(RESOURCES_DIR, "cookie.txt")
+
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
@@ -137,6 +143,18 @@ def refresh_cookie() -> str:
         raise RuntimeError("Cookie warm-up succeeded but no Set-Cookie headers were found")
 
     return "; ".join(cookie_pairs)
+
+
+def read_cookie_file(path: str) -> str:
+    if not os.path.exists(path):
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+
+def build_cookie_header(dynamic_cookie: str, file_cookie: str) -> str:
+    parts = [p.strip() for p in (dynamic_cookie, file_cookie) if p and p.strip()]
+    return "; ".join(parts)
 
 
 def build_url(symbol: str, series: str, from_date: str, to_date: str) -> str:
@@ -317,6 +335,17 @@ def main() -> int:
         print(f"Failed to generate NSE cookie: {exc}", file=sys.stderr)
         return 2
 
+    try:
+        cookie_from_file = read_cookie_file(COOKIE_FILE_PATH)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Failed to read cookie file '{COOKIE_FILE_PATH}': {exc}", file=sys.stderr)
+        return 2
+
+    if cookie_from_file:
+        print(f"Loaded extra cookie content from: {COOKIE_FILE_PATH}")
+    else:
+        print(f"Cookie file is empty or missing: {COOKIE_FILE_PATH}")
+
     success = 0
     failed = 0
 
@@ -327,7 +356,8 @@ def main() -> int:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                body = fetch_csv(symbol, args.series, args.from_date, args.to_date, cookie)
+                request_cookie = build_cookie_header(cookie, cookie_from_file)
+                body = fetch_csv(symbol, args.series, args.from_date, args.to_date, request_cookie)
                 if not looks_like_csv(body):
                     raise RuntimeError("NSE response is not CSV (cookie/session may be expired)")
 

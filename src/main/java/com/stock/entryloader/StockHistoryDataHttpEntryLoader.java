@@ -1,10 +1,15 @@
-package com.stock.service;
+package com.stock.entryloader;
 
 import com.stock.dto.StockHistory;
 import com.stock.dto.StockHistoryDetails;
 import com.stock.dto.StockHistoryRequest;
 import com.stock.dto.key.StockHistoryKey;
+import com.stock.service.NseSessionManager;
 import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.resolver.NoopAddressResolverGroup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.json.JSONArray;
@@ -18,10 +23,13 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.transport.ProxyProvider;
 import reactor.util.retry.Retry;
 
+import javax.net.ssl.SSLException;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -43,14 +51,94 @@ public class StockHistoryDataHttpEntryLoader {
     }
 
     private static final String BASE_URL = "https://www.nseindia.com/";
+    private static final String LOADER_TAG = "[NORMAL_LOADER]";
     private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
     private static final String ACCEPT_LANGUAGE = "en-GB,en-US;q=0.9,en;q=0.8";
     private static final String ACCEPT_ENCODING = "gzip, deflate";
 
+    /**
+     * Builds a WebClient pre-configured for outbound NSE calls.
+     *
+     * <p><b>Why Chrome/Postman work but Java doesn't:</b>
+     * Reactor Netty's HttpClient does NOT automatically pick up the system
+     * proxy environment variables (HTTP_PROXY / HTTPS_PROXY).  Browsers and
+     * Postman do.  We must wire the proxy explicitly.
+     *
+     * <p><b>SSL inspection:</b>
+     * The Walmart corporate proxy performs SSL inspection and presents its own
+     * certificate chain.  Netty uses its own trust store (not the OS/JVM one),
+     * so the default TLS handshake fails.  We configure Netty to trust all
+     * certificates when running behind the proxy.  This is safe on a corporate
+     * network where the proxy itself is managed and trusted.
+     */
     private WebClient buildWebClient(String cookieHeader, boolean largePayload) {
         HttpClient httpClient = HttpClient.create().followRedirect(true);
 
+        // ── Step 1: Corporate proxy ───────────────────────────────────────────
+        // Read from env vars (set by Walmart network config).
+        // Priority: HTTPS_PROXY → HTTP_PROXY
+        // Remove if not working on personal laptop or throwing any issue while calling NSE
+        String proxyEnv = System.getenv("HTTPS_PROXY");
+        if (proxyEnv == null || proxyEnv.isBlank()) proxyEnv = System.getenv("HTTP_PROXY");
+        if (proxyEnv == null || proxyEnv.isBlank()) proxyEnv = System.getenv("https_proxy");
+        if (proxyEnv == null || proxyEnv.isBlank()) proxyEnv = System.getenv("http_proxy");
 
+        if (proxyEnv != null && !proxyEnv.isBlank()) {
+            try {
+                URI proxyUri = URI.create(proxyEnv);
+                String proxyHost = proxyUri.getHost();
+                int proxyPort   = proxyUri.getPort() > 0 ? proxyUri.getPort() : 8080;
+
+                // Build no-proxy list from NO_PROXY env — convert commas to pipes (Netty format)
+                String noProxyEnv = System.getenv("NO_PROXY");
+                if (noProxyEnv == null || noProxyEnv.isBlank()) noProxyEnv = System.getenv("no_proxy");
+                final String noProxy = (noProxyEnv != null && !noProxyEnv.isBlank())
+                        ? noProxyEnv.replace(",", "|")
+                        : "localhost|127.0.0.1|*.walmart.com|*.walmartlabs.com|*.wal-mart.com";
+
+                final String fProxyHost = proxyHost;
+                final int fProxyPort    = proxyPort;
+                httpClient = httpClient.proxy(proxy -> proxy
+                        .type(ProxyProvider.Proxy.HTTP)
+                        .host(fProxyHost)
+                        .port(fProxyPort)
+                        .nonProxyHosts(noProxy)
+                );
+                log.info("WebClient routing via corporate proxy: {}:{} (no-proxy={})",
+                         proxyHost, proxyPort, noProxy);
+            } catch (Exception e) {
+                log.warn("Could not parse proxy env '{}': {} — proceeding without proxy", proxyEnv, e.getMessage());
+            }
+        } else {
+            log.debug("No corporate proxy env vars detected — connecting directly");
+        }
+
+        // ── Step 1b: DNS — let proxy resolve external hostnames ──────────────
+        // Walmart DNS doesn't resolve external domains. Without this, Netty tries
+        // to resolve nseindia.com locally and fails. NoopAddressResolverGroup
+        // skips local DNS — the proxy receives the hostname and resolves it.
+        if (proxyEnv != null && !proxyEnv.isBlank()) {
+            httpClient = httpClient.resolver(NoopAddressResolverGroup.INSTANCE);
+            log.debug("NSE WebClient: local DNS disabled — proxy handles hostname resolution");
+        }
+
+        // ── Step 2: SSL — trust Walmart certificate inspection chain ──────────
+        // Netty has its own trust store and won't trust the corporate proxy's
+        // self-signed certificate by default.  We use InsecureTrustManagerFactory
+        // which accepts any certificate.  This is acceptable inside a managed
+        // corporate network where the proxy is a controlled entity.
+        // Remove if not working on personal laptop or throwing any issue while calling NSE
+        try {
+            SslContext sslContext = SslContextBuilder.forClient()
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                    .build();
+            httpClient = httpClient.secure(spec -> spec.sslContext(sslContext));
+            log.debug("Netty SSL configured to trust corporate proxy certificate chain");
+        } catch (SSLException e) {
+            log.warn("Failed to configure permissive SSL context: {} — TLS may fail behind proxy", e.getMessage());
+        }
+
+        // Actual code starts here. Above code is just to run on walmart network
         if (largePayload) {
             httpClient = httpClient
                     .compress(true)
@@ -126,7 +214,7 @@ public class StockHistoryDataHttpEntryLoader {
                 .bodyToMono(byte[].class)
                 .map(StockHistoryDataHttpEntryLoader::decodeResponse)
                 .map(String::new)
-                .map(s -> convertCSVResponseToDto(s, stockSymbol))
+                .map(s -> convertNextApiResponseToDto(s, stockSymbol))
                 .flatMap(stockHistoryDetails -> {
                     if (stockHistoryDetails.isEmpty()) {
                         log.warn("No stock history details returned from API for symbol: {}", stockSymbol);
@@ -162,7 +250,66 @@ public class StockHistoryDataHttpEntryLoader {
                                 .doOnNext(retrySignal -> log.info("Starting retry logic..."))
                 ))
                 .doOnError(e -> log.error("Stock History Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()))
-                .onErrorResume(error -> Mono.empty());
+                .onErrorResume(error -> Mono.<StockHistory>empty());
+    }
+
+    private static List<StockHistoryDetails> convertNextApiResponseToDto(String response, String stockName) {
+        if (response == null || response.isBlank()) {
+            log.warn("NextApi payload is empty for symbol: {}", stockName);
+            return new ArrayList<>();
+        }
+        String trimmed = response.trim();
+        String payloadType = trimmed.startsWith("[") ? "json-array" : "csv";
+        log.info("NextApi payload detected for {}: {}", stockName, payloadType);
+        if (trimmed.startsWith("[")) {
+            return convertNextApiJsonArrayToDto(trimmed, stockName);
+        }
+        return convertCSVResponseToDto(trimmed, stockName);
+    }
+
+    private static List<StockHistoryDetails> convertNextApiJsonArrayToDto(String jsonArrayResponse, String stockName) {
+        List<StockHistoryDetails> stockHistoryDetails = new ArrayList<>();
+        try {
+            JSONArray data = new JSONArray(jsonArrayResponse);
+            if (data.isEmpty()) {
+                log.warn("No stock history data found in NextApi JSON array response");
+                return stockHistoryDetails;
+            }
+
+            for (int i = 0; i < data.length(); i++) {
+                JSONObject row = data.getJSONObject(i);
+                String symbolFromRow = row.optString("chSymbol", stockName);
+                String timestamp = row.optString("mtimestamp", "");
+                if (timestamp.isBlank()) {
+                    continue;
+                }
+
+                StockHistoryDetails details = StockHistoryDetails.builder()
+                        .historyDate(LocalDate.parse(timestamp, DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH)))
+                        .series(row.optString("chSeries", ""))
+                        .open(row.optDouble("chOpeningPrice", 0.0))
+                        .high(row.optDouble("chTradeHighPrice", 0.0))
+                        .low(row.optDouble("chTradeLowPrice", 0.0))
+                        .prevClose(row.optDouble("chPreviousClsPrice", 0.0))
+                        .ltp(row.optDouble("chLastTradedPrice", 0.0))
+                        .close(row.optDouble("chClosingPrice", 0.0))
+                        .vwap(row.optDouble("vwap", 0.0))
+                        .fiftyTwoWeekHigh(row.optDouble("ch52WeekHighPrice", 0.0))
+                        .fiftyTwoWeekLow(row.optDouble("ch52WeekLowPrice", 0.0))
+                        .volume(String.valueOf(row.opt("chTotTradedQty")))
+                        .value(String.valueOf(row.opt("chTotTradedVal")))
+                        .totalTrades(String.valueOf(row.opt("chTotalTrades")))
+                        .stockName(symbolFromRow)
+                        .isin("NA")
+                        .build();
+                stockHistoryDetails.add(details);
+            }
+            log.info("Parsed {} stock history records from NextApi JSON response", stockHistoryDetails.size());
+            return stockHistoryDetails;
+        } catch (Exception e) {
+            log.error("Error while converting NextApi JSON array response to DTO list", e);
+            return new ArrayList<>();
+        }
     }
 
     private Mono<List<StockHistoryDetails>> fetchApiDataList(WebClient client, String url) {
@@ -201,7 +348,7 @@ public class StockHistoryDataHttpEntryLoader {
                                 .doOnNext(retrySignal -> log.info("Starting retry logic..."))
                 ))
                 .doOnError(e -> log.error("Stock History Failed to fetch API data for symbol: {} after retries: {} ", url, e.getMessage()))
-                .onErrorResume(error -> Mono.empty());
+                .onErrorResume(error -> Mono.<List<StockHistoryDetails>>empty());
     }
 
     private static byte[] decompressGzip(byte[] compressed) {
@@ -266,6 +413,48 @@ public class StockHistoryDataHttpEntryLoader {
         );
         log.error("Stock history build url. url: {}", url);
         return url;
+    }
+
+    private String buildURLForNextApi(StockHistoryRequest request) {
+        String url = String.format(
+                "https://www.nseindia.com/api/NextApi/apiClient/GetQuoteApi" +
+                "?functionName=getHistoricalTradeData&symbol=%s&series=%s&fromDate=%s&toDate=%s&csv=true",
+                request.getStockSymbol(),
+                request.getSeries(),
+                request.getFrom(),
+                request.getTo()
+        );
+        log.info("{} NSE NextApi URL: {}", LOADER_TAG, url);
+        return url;
+    }
+
+    /**
+     * Fetches stock history from NSE NextApi (GetQuoteApi) using Playwright browser cookies.
+     * 
+     * Flow:
+     * 1. Try to get cached browser cookies (fast, 55-min TTL)
+     * 2. If cache miss: Playwright launches Chromium, visits NSE, extracts cookies
+     * 3. Merge with static file cookie (if available)
+     * 4. Make request to NSE with merged cookies
+     * 5. Parse CSV response and save to Cassandra
+     * 
+     * This is more robust than the old method because:
+     * - Automatically refreshes cookies every 50 minutes
+     * - Works even if static cookie.txt expires
+     * - Uses real browser automation (handles CloudFlare, JS execution, etc.)
+     */
+    public Mono<StockHistory> getStockHistoryFromNextApi(StockHistoryRequest request) {
+        if (isInvalidRequest(request)) {
+            log.warn("Invalid stock history request for NextApi flow: {}", request);
+            return Mono.empty();
+        }
+
+        log.info("{} Executing NextApi fetch for symbol={} from={} to={}",
+                LOADER_TAG, request.getStockSymbol(), request.getFrom(), request.getTo());
+
+        return nseSessionManager.generateCookieUsingBrowserAutomation()
+                .map(cookie -> buildWebClient(cookie, true))
+                .flatMap(client -> fetchApiData(client, buildURLForNextApi(request), request.getStockSymbol()));
     }
 
     private String buildURLForCSVResp(StockHistoryRequest request) {

@@ -37,6 +37,7 @@ EXPECTED_TABLES=(
     stocks_daily_change
     stock_description
     stock_history
+    stock_analysis_result
     stock_info_details
     stock_overview_details
 )
@@ -159,6 +160,7 @@ $CQL_DIR/sector_wise_stock_details.cql
 $CQL_DIR/stock_daily_change.cql
 $CQL_DIR/stock_description.cql
 $CQL_DIR/stock_history.cql
+$CQL_DIR/stock_analysis_result.cql
 $CQL_DIR/stock_info_details.cql
 $CQL_DIR/stock_overview_details.cql
 EOF

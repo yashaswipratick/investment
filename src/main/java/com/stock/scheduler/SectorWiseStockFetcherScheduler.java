@@ -1,25 +1,17 @@
 package com.stock.scheduler;
 
-import ch.qos.logback.classic.Logger;
 import com.stock.dto.SectorWiseStockDetails;
-import com.stock.dto.StockInfoDTO;
-import com.stock.dto.StockInfoDetails;
 import com.stock.dto.key.SectorWiseStockKey;
+import com.stock.entryloader.StockInfoHttpEntryLoader;
 import com.stock.service.*;
-import com.stock.util.Test;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.io.IOException;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;

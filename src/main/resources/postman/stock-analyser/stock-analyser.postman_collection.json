@@ -1,0 +1,142 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"name": "stock-analyser",
+		"description": "Stock Analyser API — technical analysis, AI commentary, and OpenAI key validation.\n\nlookbackDays guide:\n  250  = ~1 year  (minimum — SMA200 barely covered, NOT recommended)\n  500  = ~2 years (acceptable)\n  750  = ~3 years (RECOMMENDED — reliable SMA200, Golden/Death Cross, full cycle coverage)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Analyse Stock — 3 Years WITH AI Commentary (recommended)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"symbol\": \"INFY\",\n    \"lookbackDays\": 750,\n    \"includeAiCommentary\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/stock/investment/v1.0/stockAnalyser/analyse",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+				},
+				"description": "Runs full technical analysis on 3 years (~750 trading days) of historical data.\n\nWhy 750 days?\n- SMA200 needs at least 200 candles — 1 year (250 days) is the absolute minimum and leaves zero buffer.\n- Golden Cross / Death Cross (SMA50 vs SMA200) requires enough history to detect the crossover reliably.\n- 3 years covers at least one full bull+bear market cycle, making indicators significantly more trustworthy.\n\nFields:\n- symbol              : NSE stock symbol (e.g. INFY, RELIANCE, TCS)\n- lookbackDays        : 750 = ~3 years of trading days (RECOMMENDED)\n- includeAiCommentary : true → GPT-5.5 commentary appended to result"
+			}
+		},
+		{
+			"name": "Analyse Stock — 3 Years WITHOUT AI Commentary",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"symbol\": \"RELIANCE\",\n    \"lookbackDays\": 750,\n    \"includeAiCommentary\": false\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/stock/investment/v1.0/stockAnalyser/analyse",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+				},
+				"description": "Same as above (3 years of data) but skips the OpenAI call — faster response, works without a valid API key."
+			}
+		},
+		{
+			"name": "Analyse Stock — 2 Years (acceptable)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"symbol\": \"TCS\",\n    \"lookbackDays\": 500,\n    \"includeAiCommentary\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/stock/investment/v1.0/stockAnalyser/analyse",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+				},
+				"description": "500 trading days = ~2 years. Acceptable for SMA200 but misses broader market cycle context."
+			}
+		},
+		{
+			"name": "Analyse Stock — 1 Year (minimum, use with caution)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"symbol\": \"HDFCBANK\",\n    \"lookbackDays\": 250,\n    \"includeAiCommentary\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/stock/investment/v1.0/stockAnalyser/analyse",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["stock", "investment", "v1.0", "stockAnalyser", "analyse"]
+				},
+				"description": "250 trading days = ~1 year. MINIMUM threshold — SMA200 is barely covered with zero buffer. Stocks with missing/holiday gaps may not qualify for SMA200 at all. Not recommended for trend analysis."
+			}
+		},
+		{
+			"name": "OpenAI Key Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/stock/investment/v1.0/stockAnalyser/openai/key-status",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["stock", "investment", "v1.0", "stockAnalyser", "openai", "key-status"]
+				},
+				"description": "Returns the current OpenAI API key validation status as evaluated at application startup.\n\nResponse fields:\n- keyValid            : true/false — whether the key was accepted by OpenAI\n- validationMessage   : VALID | INVALID_HTTP_401 | INVALID_HTTP_429 | VALIDATION_ERROR | MISSING_OR_EMPTY_KEY_FILE | NOT_VALIDATED\n- aiCommentaryEnabled : mirrors keyValid — tells callers if AI commentary will be generated\n- checkedAt           : ISO-8601 timestamp of when the status was last read\n\nThe key is validated once at startup via GET https://api.openai.com/v1/models with the loaded key."
+			}
+		}
+	]
+}
+

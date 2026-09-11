@@ -1,14 +1,8 @@
 package com.stock.util;
 
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 /*import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;*/
-import org.json.JSONArray;
-import org.json.JSONObject;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.File;
@@ -40,7 +34,7 @@ public class Test {
         List<String> stockSymbols = new ArrayList<>();
         ObjectMapper mapper = new ObjectMapper();
         // Read JSON file from classpath resources
-        ClassPathResource resource = new ClassPathResource("Nifty-50.json");
+        ClassPathResource resource = new ClassPathResource("postman/Nifty-50.json");
         InputStream inputStream = resource.getInputStream();
         NiftyData niftyData = mapper.readValue(
                 inputStream,

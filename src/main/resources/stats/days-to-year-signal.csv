@@ -1,0 +1,5 @@
+Request lookbackDays,Mapped to,Price Change Window,Label in response
+≤ 180,6 months,last 126 trading bars,"""6M"""
+181–400,1 year,last 252 trading bars,"""1Y"""
+401–700,2 years,last 504 trading bars,"""2Y"""
+> 700,3 years,last 756 trading bars,"""3Y"""
