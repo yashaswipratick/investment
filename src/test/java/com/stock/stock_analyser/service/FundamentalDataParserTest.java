@@ -44,6 +44,21 @@ class FundamentalDataParserTest {
             assertEquals(2.0, period.shares());
             assertEquals(150.0, result.marketSnapshot().currentPrice());
             assertEquals(750.0, result.marketSnapshot().currentMarketCap());
+            assertNull(result.marketSnapshot().promoterHolding());
+            assertNull(result.marketSnapshot().promoterPledge());
+        }
+    }
+
+
+    @Test
+    void promoterAndPledgeAreUnavailableWhenSourceHasNoVerifiedFields() throws Exception {
+        try (var workbook = new XSSFWorkbook()) {
+            var sheet = workbook.createSheet("Data Sheet");
+            put(sheet, 15, 1, 45647);
+            put(sheet, 16, 1, 100.0);
+            FundamentalDataSet result = new FundamentalDataParser().parse(workbook, "TEST");
+            assertNull(result.marketSnapshot().promoterHolding());
+            assertNull(result.marketSnapshot().promoterPledge());
         }
     }
 

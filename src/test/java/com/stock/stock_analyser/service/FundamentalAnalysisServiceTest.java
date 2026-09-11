@@ -205,6 +205,98 @@ class FundamentalAnalysisServiceTest {
         assertNull(service.calculatePb(null, 100.0));
     }
 
+    @Test void roceUsesOperatingProfitAndCapitalEmployed() {
+        var p = period("2025-03-31", 100, 10, 40, 20, 40, 20, 15, 5, 1, 10, 2);
+        assertEquals(20.0, service.calculateRoce(p));
+    }
+
+    @Test void roceIsUnavailableForMissingOrInvalidCapitalBase() {
+        var missing = new FundamentalPeriodData(LocalDate.of(2025, 3, 31), 100.0, 10.0, null, 20.0, 40.0,
+                20.0, 15.0, 5.0, 1.0, 10.0, 2.0);
+        assertNull(service.calculateRoce(missing));
+        assertNull(service.calculateRoce(period("2025-03-31", 100, 10, -40, -20, 40, 20, 15, 5, 1, 10, 2)));
+        assertNull(service.calculateRoce(period("2025-03-31", 100, 10, 0, 0, 0, 20, 15, 5, 1, 10, 2)));
+    }
+
+    @Test void growthRequiresPositivePreviousValue() {
+        assertEquals(20.0, service.calculateGrowth(120.0, 100.0), 0.000001);
+        assertNull(service.calculateGrowth(120.0, 0.0));
+        assertNull(service.calculateGrowth(120.0, -100.0));
+    }
+
+    @Test void marginTrendClassifiesImprovingStableAndDeclining() {
+        assertEquals("IMPROVING", service.trend(10.0, 11.0));
+        assertEquals("STABLE", service.trend(10.0, 10.1));
+        assertEquals("DECLINING", service.trend(11.0, 10.0));
+        assertEquals("UNAVAILABLE", service.trend(null, 10.0));
+    }
+
+    @Test void historicalTrendUsesMultipleAnnualPeriods() {
+        var periods = List.of(
+                period("2022-03-31", 80, 8, 20, 30, 5, 12, 10, 2, 1, 8, 2),
+                period("2023-03-31", 90, 9, 21, 31, 5, 13, 11, 2, 1, 9, 2),
+                period("2024-03-31", 100, 10, 22, 32, 5, 14, 12, 2, 1, 10, 2),
+                period("2025-03-31", 90, 11, 24, 36, 5, 13, 12, 2, 1, 11, 2));
+        assertEquals("IMPROVING", service.historicalTrend(periods, FundamentalPeriodData::profit));
+        assertEquals("STABLE", service.historicalTrend(periods, p -> 100.0));
+        assertEquals("IMPROVING", service.historicalTrend(periods, FundamentalPeriodData::sales));
+        assertEquals("UNAVAILABLE", service.historicalTrend(List.of(periods.get(0)), FundamentalPeriodData::sales));
+    }
+
+    @Test void revenueAndProfitTrendUsePositiveAndNegativeYoyGrowth() {
+        assertEquals("IMPROVING", service.trendByValue(100.0, 110.0));
+        assertEquals("DECLINING", service.trendByValue(110.0, 100.0));
+        assertEquals("STABLE", service.trendByValue(100.0, 100.0));
+        assertEquals("UNAVAILABLE", service.trendByValue(null, 100.0));
+    }
+
+    @Test void fullAnalysisExposesPoint4TrendsAndMetrics() {
+        var periods = List.of(
+                period("2022-03-31", 80, 8, 20, 30, 5, 12, 10, 2, 1, 8, 2),
+                period("2023-03-31", 90, 9, 21, 31, 5, 13, 11, 2, 1, 9, 2),
+                period("2024-03-31", 100, 10, 22, 32, 5, 14, 12, 2, 1, 10, 2),
+                period("2025-03-31", 120, 15, 24, 36, 5, 20, 17, 2, 1, 15, 2));
+        FundamentalAnalysis result = service.analyse(new FundamentalDataSet("TEST", periods,
+                new FundamentalMarketSnapshot(180.0, 1200.0)));
+        assertEquals(16.67, result.getOperatingMargin(), 0.01);
+        assertNotNull(result.getRoce());
+        assertNull(result.getPromoterHolding());
+        assertNull(result.getPromoterPledge());
+        assertEquals("IMPROVING", result.getNetMarginTrend());
+        assertEquals("IMPROVING", result.getOperatingMarginTrend());
+        assertEquals("IMPROVING", result.getRevenueTrend());
+        assertEquals(120.0, result.getLatestRevenue());
+        assertEquals(100.0, result.getPreviousRevenue());
+        assertEquals(20.0, result.getRevenueGrowthYoY());
+        assertEquals("IMPROVING", result.getProfitTrend());
+        assertEquals(15.0, result.getLatestProfit());
+        assertEquals(10.0, result.getPreviousProfit());
+        assertEquals(50.0, result.getProfitGrowthYoY());
+    }
+
+    @Test void fullAnalysisPreservesNegativeProfitAndUnavailableProfitGrowth() {
+        var periods = List.of(
+                period("2024-03-31", 100, -10, 20, 30, 5, 12, -8, 2, 1, 10, 2),
+                period("2025-03-31", 110, -5, 21, 31, 5, 13, -3, 2, 1, 11, 2));
+        FundamentalAnalysis result = service.analyse(new FundamentalDataSet("TEST", periods,
+                new FundamentalMarketSnapshot(100.0, 500.0)));
+        assertEquals(-5.0, result.getLatestProfit());
+        assertEquals(-10.0, result.getPreviousProfit());
+        assertNull(result.getProfitGrowthYoY());
+        assertEquals("IMPROVING", result.getProfitTrend());
+    }
+
+    @Test void fullAnalysisReturnsUnavailableMarginTrendWhenPriorInputsAreMissing() {
+        var periods = List.of(
+                new FundamentalPeriodData(LocalDate.of(2024, 3, 31), null, 10.0, 20.0, 30.0, 5.0,
+                        12.0, 12.0, 2.0, 1.0, 10.0, 2.0),
+                period("2025-03-31", 110, 12, 21, 31, 5, 13, 13, 2, 1, 11, 2));
+        FundamentalAnalysis result = service.analyse(new FundamentalDataSet("TEST", periods,
+                new FundamentalMarketSnapshot(100.0, 500.0)));
+        assertEquals("UNAVAILABLE", result.getNetMarginTrend());
+        assertEquals("UNAVAILABLE", result.getRevenueTrend());
+    }
+
     @Test void nullPeriodsAreIgnoredDuringValidation() {
         var p = period("2025-03-31", 100, 10, 20, 30, 5, 12, 12, 2, 1, 10, 2);
         assertEquals(List.of(p), service.validatedPeriods(Arrays.asList(null, p)));

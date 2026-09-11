@@ -82,6 +82,12 @@ public class FundamentalAnalysisService {
         Double epsCagr3Y = calculateCagr(eps, threeYearsAgoEps, latest.date(), dateOf(threeYearsAgo));
         Double epsGrowthYoY = calculateEpsGrowth(eps, previousEps);
         Double netMargin = percentage(safeRatio(latest.profit(), latest.sales()));
+        Double previousNetMargin = percentage(safeRatio(previous.profit(), previous.sales()));
+        Double operatingMargin = percentage(safeRatio(latest.operatingProfit(), latest.sales()));
+        Double previousOperatingMargin = percentage(safeRatio(previous.operatingProfit(), previous.sales()));
+        Double roce = calculateRoce(latest);
+        Double revenueGrowthYoY = calculateGrowth(latest.sales(), previous.sales());
+        Double profitGrowthYoY = calculateGrowth(latest.profit(), previous.profit());
         Double roe = calculateRoe(latest.profit(), avgNetWorth);
         Double debtToEquity = safeRatio(latest.borrowings(), netWorth);
         Double interestCoverage = calculateInterestCoverage(latest);
@@ -101,8 +107,7 @@ public class FundamentalAnalysisService {
         }
 
         boolean bank = Set.of("HDFCBANK", "ICICIBANK", "SBIN").contains(data.symbol());
-        FundamentalMarketSnapshot market = data.marketSnapshot() == null
-                ? new FundamentalMarketSnapshot(null, null) : data.marketSnapshot();
+        FundamentalMarketSnapshot market = marketSnapshot(data);
         Double pe = calculatePe(market.currentPrice(), eps);
         Double pb = calculatePb(market.currentMarketCap(), netWorth);
 
@@ -112,9 +117,12 @@ public class FundamentalAnalysisService {
         Double cash = average(scoreCashConversion(cfoToPat), scoreConsistency(positiveProfitYears, availableProfitYears), scoreCfo(latest.cfo()));
         Double consistency = average(scoreConsistency(positiveProfitYears, availableProfitYears), scoreConsistency(positiveRevenueGrowthYears, availableRevenueGrowthYears));
         Double valuation = average(scorePe(pe), scorePb(pb));
+        FundamentalMarketSnapshot ownership = marketSnapshot(data);
+        String revenueTrend = historicalTrend(periods, FundamentalPeriodData::sales);
+        String profitTrend = historicalTrend(periods, FundamentalPeriodData::profit);
         Double overall = weightedAvailable(growth, 25.0, profitability, 20.0, health, 15.0, cash, 15.0, consistency, 10.0, valuation, 15.0);
 
-        String periodNote = "Derived from the configured annual workbook; latest period " + latest.date() + ".";
+        String periodNote = "Derived from the configured annual workbook; latest period " + latest.date() + ". Promoter holding and promoter pledge are unavailable because verified workbook mapping exposes no promoter/pledge fields; they are not inferred or defaulted to zero. ROCE uses Operating Profit / (Equity + Reserves + Borrowings) and the configured workbook maps Equity and Reserves to the balance-sheet rows used by this calculation.";
         if (threeYearsAgo != null) periodNote += " Revenue CAGR 3Y uses " + threeYearsAgo.date() + " to " + latest.date() + ".";
         if (fiveYearsAgo != null) periodNote += " Revenue CAGR 5Y uses " + fiveYearsAgo.date() + " to " + latest.date() + ".";
 
@@ -122,7 +130,12 @@ public class FundamentalAnalysisService {
                 .status("AVAILABLE").confidence(periods.size() >= 8 ? "HIGH" : periods.size() >= 5 ? "MEDIUM" : "LOW")
                 .latestPeriod(latest.date()).periodsAvailable(periods.size())
                 .revenueCagr3Y(round(revenueCagr3Y)).revenueCagr5Y(round(revenueCagr5Y)).eps(round(eps)).epsGrowthYoY(round(epsGrowthYoY)).epsCagr3Y(round(epsCagr3Y))
-                .netMargin(round(netMargin)).roe(round(roe)).debtToEquity(bank ? null : round(debtToEquity)).interestCoverage(bank ? null : round(interestCoverage)).cfoToPat(round(cfoToPat))
+                .netMargin(round(netMargin)).operatingMargin(round(operatingMargin)).roce(round(roce))
+                .promoterHolding(round(ownership.promoterHolding())).promoterPledge(round(ownership.promoterPledge()))
+                .netMarginTrend(trend(previousNetMargin, netMargin)).operatingMarginTrend(trend(previousOperatingMargin, operatingMargin))
+                .revenueTrend(revenueTrend).latestRevenue(round(latest.sales())).previousRevenue(round(previous.sales())).revenueGrowthYoY(round(revenueGrowthYoY))
+                .profitTrend(profitTrend).latestProfit(round(latest.profit())).previousProfit(round(previous.profit())).profitGrowthYoY(round(profitGrowthYoY))
+                .debtToEquity(bank ? null : round(debtToEquity)).interestCoverage(bank ? null : round(interestCoverage)).cfoToPat(round(cfoToPat))
                 .positiveProfitYears(positiveProfitYears).positiveRevenueGrowthYears(positiveRevenueGrowthYears).peRatio(round(pe)).pbRatio(round(pb))
                 .growthScore(round(growth)).profitabilityScore(round(profitability)).financialHealthScore(bank ? null : round(health)).cashFlowScore(round(cash))
                 .consistencyScore(round(consistency)).valuationScore(round(valuation)).overallScore(round(overall))
@@ -190,6 +203,64 @@ public class FundamentalAnalysisService {
     Double calculateRoe(Double profit, Double averageNetWorth) {
         if (profit == null || averageNetWorth == null || averageNetWorth == 0) return null;
         return profit / averageNetWorth * 100;
+    }
+
+    /** ROCE = Operating Profit / Capital Employed * 100, where Capital Employed = Equity + Reserves + Borrowings. */
+    Double calculateRoce(FundamentalPeriodData period) {
+        if (period == null || period.operatingProfit() == null || period.equity() == null
+                || period.reserves() == null || period.borrowings() == null) return null;
+        Double capitalEmployed = sum(sum(period.equity(), period.reserves()), period.borrowings());
+        if (capitalEmployed == null || capitalEmployed <= 0) return null;
+        double roce = period.operatingProfit() / capitalEmployed * 100;
+        return Double.isFinite(roce) ? roce : null;
+    }
+
+    Double calculateGrowth(Double current, Double previous) {
+        if (current == null || previous == null || previous <= 0) return null;
+        double growth = (current / previous - 1) * 100;
+        return Double.isFinite(growth) ? growth : null;
+    }
+
+    /** Classifies margin movement in percentage points; changes within 0.25pp are stable. */
+    String trend(Double previous, Double latest) {
+        if (previous == null || latest == null || !Double.isFinite(previous) || !Double.isFinite(latest)) return "UNAVAILABLE";
+        double delta = latest - previous;
+        if (delta > 0.25) return "IMPROVING";
+        if (delta < -0.25) return "DECLINING";
+        return "STABLE";
+    }
+
+    FundamentalMarketSnapshot marketSnapshot(FundamentalDataSet data) {
+        return data.marketSnapshot() == null ? new FundamentalMarketSnapshot(null, null) : data.marketSnapshot();
+    }
+
+    /** Classifies the historical direction from consecutive valid annual observations. */
+    String historicalTrend(List<FundamentalPeriodData> periods, java.util.function.Function<FundamentalPeriodData, Double> valueExtractor) {
+        if (periods == null || valueExtractor == null) return "UNAVAILABLE";
+        int improving = 0, declining = 0, comparable = 0;
+        Double previous = null;
+        for (FundamentalPeriodData period : periods) {
+            Double current = valueExtractor.apply(period);
+            if (current == null || !Double.isFinite(current)) continue;
+            if (previous != null) {
+                comparable++;
+                if (current > previous) improving++;
+                else if (current < previous) declining++;
+            }
+            previous = current;
+        }
+        if (comparable == 0) return "UNAVAILABLE";
+        if (improving > declining) return "IMPROVING";
+        if (declining > improving) return "DECLINING";
+        return "STABLE";
+    }
+
+    /** Classifies a revenue/profit direction from the direct chronological movement of valid values. */
+    String trendByValue(Double previous, Double latest) {
+        if (previous == null || latest == null || !Double.isFinite(previous) || !Double.isFinite(latest)) return "UNAVAILABLE";
+        if (latest > previous) return "IMPROVING";
+        if (latest < previous) return "DECLINING";
+        return "STABLE";
     }
 
     Double calculateInterestCoverage(FundamentalPeriodData period) {

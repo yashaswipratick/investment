@@ -24,8 +24,9 @@ public class FundamentalDataParser {
         }
 
         // Verified against the supplied workbook's Data Sheet labels. POI row indexes are zero-based.
-        // The workbook's existing normalized mapping is retained; Operating Profit is added for
-        // interest-coverage correctness, while current market values are separated below.
+        // The supplied workbook was also searched for promoter/pledge/shareholding labels; no such
+        // source fields were found. Ownership values therefore remain explicitly unavailable rather
+        // than being inferred or defaulted to zero. Operating Profit is mapped for Point #3/4 metrics.
         Row dates = sheet.getRow(15), sales = sheet.getRow(16), profit = sheet.getRow(29),
                 equity = sheet.getRow(56), reserves = sheet.getRow(57), debt = sheet.getRow(58),
                 operatingProfit = sheet.getRow(25), pbt = sheet.getRow(27), interest = sheet.getRow(26),
