@@ -231,6 +231,18 @@ class FundamentalAnalysisServiceTest {
         assertEquals("UNAVAILABLE", service.trend(null, 10.0));
     }
 
+    @Test void historicalTrendUsesMultipleAnnualPeriods() {
+        var periods = List.of(
+                period("2022-03-31", 80, 8, 20, 30, 5, 12, 10, 2, 1, 8, 2),
+                period("2023-03-31", 90, 9, 21, 31, 5, 13, 11, 2, 1, 9, 2),
+                period("2024-03-31", 100, 10, 22, 32, 5, 14, 12, 2, 1, 10, 2),
+                period("2025-03-31", 90, 11, 24, 36, 5, 13, 12, 2, 1, 11, 2));
+        assertEquals("IMPROVING", service.historicalTrend(periods, FundamentalPeriodData::profit));
+        assertEquals("STABLE", service.historicalTrend(periods, p -> 100.0));
+        assertEquals("IMPROVING", service.historicalTrend(periods, FundamentalPeriodData::sales));
+        assertEquals("UNAVAILABLE", service.historicalTrend(List.of(periods.get(0)), FundamentalPeriodData::sales));
+    }
+
     @Test void revenueAndProfitTrendUsePositiveAndNegativeYoyGrowth() {
         assertEquals("IMPROVING", service.trendByValue(100.0, 110.0));
         assertEquals("DECLINING", service.trendByValue(110.0, 100.0));

@@ -107,8 +107,7 @@ public class FundamentalAnalysisService {
         }
 
         boolean bank = Set.of("HDFCBANK", "ICICIBANK", "SBIN").contains(data.symbol());
-        FundamentalMarketSnapshot market = data.marketSnapshot() == null
-                ? new FundamentalMarketSnapshot(null, null) : data.marketSnapshot();
+        FundamentalMarketSnapshot market = marketSnapshot(data);
         Double pe = calculatePe(market.currentPrice(), eps);
         Double pb = calculatePb(market.currentMarketCap(), netWorth);
 
@@ -118,9 +117,12 @@ public class FundamentalAnalysisService {
         Double cash = average(scoreCashConversion(cfoToPat), scoreConsistency(positiveProfitYears, availableProfitYears), scoreCfo(latest.cfo()));
         Double consistency = average(scoreConsistency(positiveProfitYears, availableProfitYears), scoreConsistency(positiveRevenueGrowthYears, availableRevenueGrowthYears));
         Double valuation = average(scorePe(pe), scorePb(pb));
+        FundamentalMarketSnapshot ownership = marketSnapshot(data);
+        String revenueTrend = historicalTrend(periods, FundamentalPeriodData::sales);
+        String profitTrend = historicalTrend(periods, FundamentalPeriodData::profit);
         Double overall = weightedAvailable(growth, 25.0, profitability, 20.0, health, 15.0, cash, 15.0, consistency, 10.0, valuation, 15.0);
 
-        String periodNote = "Derived from the configured annual workbook; latest period " + latest.date() + ". Promoter holding and promoter pledge are unavailable because the configured workbook source does not expose those fields; they are not inferred or defaulted to zero.";
+        String periodNote = "Derived from the configured annual workbook; latest period " + latest.date() + ". Promoter holding and promoter pledge are unavailable because verified workbook mapping exposes no promoter/pledge fields; they are not inferred or defaulted to zero. ROCE uses Operating Profit / (Equity + Reserves + Borrowings) and the configured workbook maps Equity and Reserves to the balance-sheet rows used by this calculation.";
         if (threeYearsAgo != null) periodNote += " Revenue CAGR 3Y uses " + threeYearsAgo.date() + " to " + latest.date() + ".";
         if (fiveYearsAgo != null) periodNote += " Revenue CAGR 5Y uses " + fiveYearsAgo.date() + " to " + latest.date() + ".";
 
@@ -129,10 +131,10 @@ public class FundamentalAnalysisService {
                 .latestPeriod(latest.date()).periodsAvailable(periods.size())
                 .revenueCagr3Y(round(revenueCagr3Y)).revenueCagr5Y(round(revenueCagr5Y)).eps(round(eps)).epsGrowthYoY(round(epsGrowthYoY)).epsCagr3Y(round(epsCagr3Y))
                 .netMargin(round(netMargin)).operatingMargin(round(operatingMargin)).roce(round(roce))
-                .promoterHolding(null).promoterPledge(null)
+                .promoterHolding(round(ownership.promoterHolding())).promoterPledge(round(ownership.promoterPledge()))
                 .netMarginTrend(trend(previousNetMargin, netMargin)).operatingMarginTrend(trend(previousOperatingMargin, operatingMargin))
-                .revenueTrend(trendByValue(previous.sales(), latest.sales())).latestRevenue(round(latest.sales())).previousRevenue(round(previous.sales())).revenueGrowthYoY(round(revenueGrowthYoY))
-                .profitTrend(trendByValue(previous.profit(), latest.profit())).latestProfit(round(latest.profit())).previousProfit(round(previous.profit())).profitGrowthYoY(round(profitGrowthYoY))
+                .revenueTrend(revenueTrend).latestRevenue(round(latest.sales())).previousRevenue(round(previous.sales())).revenueGrowthYoY(round(revenueGrowthYoY))
+                .profitTrend(profitTrend).latestProfit(round(latest.profit())).previousProfit(round(previous.profit())).profitGrowthYoY(round(profitGrowthYoY))
                 .debtToEquity(bank ? null : round(debtToEquity)).interestCoverage(bank ? null : round(interestCoverage)).cfoToPat(round(cfoToPat))
                 .positiveProfitYears(positiveProfitYears).positiveRevenueGrowthYears(positiveRevenueGrowthYears).peRatio(round(pe)).pbRatio(round(pb))
                 .growthScore(round(growth)).profitabilityScore(round(profitability)).financialHealthScore(bank ? null : round(health)).cashFlowScore(round(cash))
@@ -225,6 +227,31 @@ public class FundamentalAnalysisService {
         double delta = latest - previous;
         if (delta > 0.25) return "IMPROVING";
         if (delta < -0.25) return "DECLINING";
+        return "STABLE";
+    }
+
+    FundamentalMarketSnapshot marketSnapshot(FundamentalDataSet data) {
+        return data.marketSnapshot() == null ? new FundamentalMarketSnapshot(null, null) : data.marketSnapshot();
+    }
+
+    /** Classifies the historical direction from consecutive valid annual observations. */
+    String historicalTrend(List<FundamentalPeriodData> periods, java.util.function.Function<FundamentalPeriodData, Double> valueExtractor) {
+        if (periods == null || valueExtractor == null) return "UNAVAILABLE";
+        int improving = 0, declining = 0, comparable = 0;
+        Double previous = null;
+        for (FundamentalPeriodData period : periods) {
+            Double current = valueExtractor.apply(period);
+            if (current == null || !Double.isFinite(current)) continue;
+            if (previous != null) {
+                comparable++;
+                if (current > previous) improving++;
+                else if (current < previous) declining++;
+            }
+            previous = current;
+        }
+        if (comparable == 0) return "UNAVAILABLE";
+        if (improving > declining) return "IMPROVING";
+        if (declining > improving) return "DECLINING";
         return "STABLE";
     }
 
