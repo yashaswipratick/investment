@@ -2,7 +2,7 @@ package com.stock.stock_analyser.fundamental;
 
 import java.time.LocalDate;
 
-/** Normalized annual fundamental data consumed by the analysis layer. */
+/** Period-specific annual financial data. Current market values do not belong here. */
 public record FundamentalPeriodData(
         LocalDate date,
         Double sales,
@@ -10,11 +10,10 @@ public record FundamentalPeriodData(
         Double equity,
         Double reserves,
         Double borrowings,
+        Double operatingProfit,
         Double pbt,
         Double interest,
         Double otherIncome,
         Double cfo,
-        Double price,
-        Double marketCap,
         Double shares) {
 }

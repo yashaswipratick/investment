@@ -2,6 +2,13 @@ package com.stock.stock_analyser.fundamental;
 
 import java.util.List;
 
-/** Parsed fundamental dataset for a stock. Parsing concerns stop at this boundary. */
-public record FundamentalDataSet(String symbol, List<FundamentalPeriodData> annualPeriods) {
+/** Parsed fundamental dataset. Period data and the current market snapshot are separate contracts. */
+public record FundamentalDataSet(
+        String symbol,
+        List<FundamentalPeriodData> annualPeriods,
+        FundamentalMarketSnapshot marketSnapshot) {
+
+    public FundamentalDataSet(String symbol, List<FundamentalPeriodData> annualPeriods) {
+        this(symbol, annualPeriods, new FundamentalMarketSnapshot(null, null));
+    }
 }
