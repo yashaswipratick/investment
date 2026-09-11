@@ -44,6 +44,7 @@ public class StockAnalysisResultPersistenceService {
                 .windowMessage(result.getWindowMessage())
                 .dataNote(result.getDataNote())
                 .technicalJson(toJson(result.getTechnical()))
+                .fundamentalJson(toJson(result.getFundamental()))
                 .recommendationJson(toJson(result.getRecommendation()))
                 .projectionsJson(toJson(result.getProjections()))
                 .entryTimingJson(toJson(result.getEntryTiming()))

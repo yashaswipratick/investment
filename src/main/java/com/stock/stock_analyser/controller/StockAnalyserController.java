@@ -158,6 +158,8 @@ public class StockAnalyserController {
                                             m.put("recommendation", objectMapper.readValue(e.getRecommendationJson(), Object.class));
                                         if (e.getTechnicalJson() != null)
                                             m.put("technical", objectMapper.readValue(e.getTechnicalJson(), Object.class));
+                                        if (e.getFundamentalJson() != null)
+                                            m.put("fundamental", objectMapper.readValue(e.getFundamentalJson(), Object.class));
                                         if (e.getProjectionsJson() != null)
                                             m.put("projections", objectMapper.readValue(e.getProjectionsJson(), Object.class));
                                         if (e.getEntryTimingJson() != null)

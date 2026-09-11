@@ -10,6 +10,7 @@ import com.stock.stock_analyser.dto.StockAnalysisRequest;
 import com.stock.stock_analyser.dto.StockAnalysisResult;
 import com.stock.stock_analyser.dto.TechnicalSignals;
 import com.stock.stock_analyser.dto.EntryTiming;
+import com.stock.stock_analyser.dto.FundamentalAnalysis;
 import com.stock.stock_analyser.dto.PeriodProjection;
 import com.stock.stock_analyser.dto.StopLossStrategy;
 import com.stock.stock_analyser.engine.InvestmentSignalEngine;
@@ -75,6 +76,7 @@ public class StockAnalyserService {
     private final ProjectionEngine           projectionEngine;
     private final OpenAiCommentaryService    openAiService;
     private final StockAnalysisResultPersistenceService analysisResultPersistenceService;
+    private final FundamentalAnalysisService fundamentalAnalysisService;
 
     /**
      * Analyses a stock and returns results for ALL applicable periods in one call.
@@ -344,6 +346,7 @@ public class StockAnalyserService {
         log.info("[{}][{}] Analysing {} candles | windowStatus={}", symbol, periodLabel, total, windowStatus);
 
         TechnicalSignals technical         = technicalEngine.compute(candles, tradingBars);
+        FundamentalAnalysis fundamental = fundamentalAnalysisService.analyse(symbol);
         InvestmentRecommendation recommendation = signalEngine.recommend(technical);
 
         // ── New: projections, entry timing, stop-loss strategy ───────────────
@@ -355,7 +358,7 @@ public class StockAnalyserService {
 
         if (!includeAi) {
             return Mono.just(buildResult(symbol, periodLabel, total, dataFrom, dataTo,
-                    requiredRecommended, windowStatus, windowMessage, technical, recommendation,
+                    requiredRecommended, windowStatus, windowMessage, technical, fundamental, recommendation,
                     projections, entryTiming, stopLossStrategy, dataNote));
         }
 
@@ -369,7 +372,7 @@ public class StockAnalyserService {
                 .map(commentary -> {
                     recommendation.setAiCommentary(commentary);
                     return buildResult(symbol, periodLabel, total, dataFrom, dataTo,
-                            requiredRecommended, windowStatus, windowMessage, technical, recommendation,
+                            requiredRecommended, windowStatus, windowMessage, technical, fundamental, recommendation,
                             projections, entryTiming, stopLossStrategy, dataNote);
                 });
     }
@@ -402,6 +405,7 @@ public class StockAnalyserService {
                                             LocalDate requiredFrom,
                                             String windowStatus, String windowMessage,
                                             TechnicalSignals technical,
+                                            FundamentalAnalysis fundamental,
                                             InvestmentRecommendation recommendation,
                                             java.util.List<PeriodProjection> projections,
                                             EntryTiming entryTiming,
@@ -418,6 +422,7 @@ public class StockAnalyserService {
                 .windowStatus(windowStatus)
                 .windowMessage(windowMessage)
                 .technical(technical)
+                .fundamental(fundamental)
                 .recommendation(recommendation)
                 .projections(projections)
                 .entryTiming(entryTiming)

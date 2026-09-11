@@ -13,6 +13,9 @@ server:
     # Must be >= spring.mvc.async.request-timeout to avoid premature connection close
     connection-timeout: 600000
 
+fundamental:
+  data-directory: ${FUNDAMENTAL_DATA_DIRECTORY:/Users/yashaswipratick/projects/investment/src/main/resources/fundamental-data}
+
 spring:
   mvc:
     async:
