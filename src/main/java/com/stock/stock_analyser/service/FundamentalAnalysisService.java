@@ -147,6 +147,9 @@ public class FundamentalAnalysisService {
         return valid;
     }
 
+    private static final long HISTORICAL_PERIOD_TOLERANCE_DAYS = 183;
+
+    /** Selects the nearest prior financial period to the target date within a six-month tolerance. */
     FundamentalPeriodData findHistoricalPeriod(List<FundamentalPeriodData> periods, LocalDate latestDate, double targetYears) {
         if (periods == null || latestDate == null) return null;
         LocalDate targetDate = latestDate.minusDays(Math.round(targetYears * DAYS_PER_YEAR));
@@ -154,14 +157,13 @@ public class FundamentalAnalysisService {
         long bestDistance = Long.MAX_VALUE;
         for (FundamentalPeriodData period : periods) {
             if (period.date() == null || !period.date().isBefore(latestDate)) continue;
-            if (period.date().isAfter(targetDate)) continue;
             long distance = Math.abs(ChronoUnit.DAYS.between(period.date(), targetDate));
             if (distance < bestDistance) {
                 best = period;
                 bestDistance = distance;
             }
         }
-        return best;
+        return bestDistance <= HISTORICAL_PERIOD_TOLERANCE_DAYS ? best : null;
     }
 
     double elapsedYears(LocalDate startDate, LocalDate endDate) {
