@@ -18,6 +18,11 @@ class NseMarketFreshnessServiceTest {
         return new NseMarketFreshnessService(Clock.fixed(Instant.parse(instant), IST), LocalTime.of(18, 30), holidays);
     }
 
+    private NseMarketFreshnessService automaticService(String instant, Set<LocalDate> holidays) {
+        return new NseMarketFreshnessService(Clock.fixed(Instant.parse(instant), IST), LocalTime.of(18, 30), holidays,
+                new NseHolidayCalendarService());
+    }
+
     @Test void weekendUsesFriday() {
         assertEquals(LocalDate.of(2026, 9, 11), service("2026-09-12T12:00:00Z", Set.of()).expectedLatestTradingDate());
     }
@@ -32,6 +37,10 @@ class NseMarketFreshnessServiceTest {
 
     @Test void weekdayAfterCloseUsesToday() {
         assertEquals(LocalDate.of(2026, 9, 11), service("2026-09-11T14:00:00Z", Set.of()).expectedLatestTradingDate());
+    }
+
+    @Test void automaticHolidayCalendarIsUsedByFreshnessService() {
+        assertEquals(LocalDate.of(2026, 9, 11), automaticService("2026-09-14T14:00:00Z", Set.of()).expectedLatestTradingDate());
     }
 
     @Test void configuredHolidayIsSkipped() {

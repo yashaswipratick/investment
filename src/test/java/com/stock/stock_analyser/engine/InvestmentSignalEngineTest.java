@@ -26,6 +26,17 @@ class InvestmentSignalEngineTest {
         assertEquals(reward/risk,r.getRiskRewardRatio(),0.000001);
         assertTrue(risk>0 && reward>0 && Double.isFinite(r.getRiskRewardRatio()));
     }
+    @Test void nearbyResistanceCannotCreateSubTwoRBuy(){
+        TechnicalSignals t = TechnicalSignals.builder().currentPrice(100.0).sma20(95.0).sma50(100.0).sma200(90.0)
+                .rsi14(60.0).rsiSignal("NEUTRAL").macdSignalType("BULLISH").maSignal("BULLISH")
+                .volumeSpike(true).avgVolume20(100.0).currentVolume(200.0).volumeTrend("RISING_STRONG")
+                .adx14(30.0).trendDirection("UPTREND").fiftyTwoWeekHigh(130.0).priceVs52WeekHighPct(-23.0)
+                .vwap(95.0).bbSignal("INSIDE").bbMiddle(95.0).bbLower(90.0).resistanceLevel(104.0).build();
+        InvestmentRecommendation r = engine.recommend(t, tech("PASS"), fund("PASS"));
+        assertEquals("BUY", r.getAction());
+        assertTrue(r.getRiskRewardRatio() >= 2.0);
+    }
+
     @Test void nonBuyStatesDoNotCreateActionableLongSetup(){
         InvestmentRecommendation wait=engine.recommend(technical(),tech("FAIL"),fund("PASS"));
         assertEquals("WAIT_FOR_CONFIRMATION",wait.getAction()); assertNull(wait.getTargetPrice()); assertNull(wait.getStopLossPrice());

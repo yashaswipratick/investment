@@ -65,9 +65,9 @@ public class StockAnalyserService {
     private static final int RECOMMENDED_TRADING_DAYS = 200; // SMA200 requires this
     private static final int RELIABLE_TRADING_DAYS  = 60;    // All except SMA200
     private static final int MINIMUM_TRADING_DAYS   = 35;    // MACD + RSI at least
+    private static final int INDICATOR_WARMUP_BARS  = 200;   // stable indicator warm-up
 
-    // Calendar days = trading days × 1.4 (accounts for weekends + holidays)
-    private static final double CALENDAR_MULTIPLIER = 1.4;
+    // Conservative fetch conversion only; actual analysis windows are trading-bar based.
 
 
     private final StockHistoryDataService    stockHistoryDataService;
@@ -216,19 +216,20 @@ public class StockAnalyserService {
 
             chain = chain.flatMap(resultMap -> {
                 int available = allCandles.size();
-                List<StockHistoryDetails> candles = available <= tradingBars
-                        ? allCandles
-                        : allCandles.subList(available - tradingBars, available);
+                int periodStart = Math.max(0, available - tradingBars);
+                List<StockHistoryDetails> periodCandles = allCandles.subList(periodStart, available);
+                int indicatorStart = Math.max(0, periodStart - INDICATOR_WARMUP_BARS);
+                List<StockHistoryDetails> candles = allCandles.subList(indicatorStart, available);
 
-                log.info("[{}][{}] Analysing {} candles | aiEnabled={} | webSearch={}",
-                         symbol, periodLabel, candles.size(), includeAi,
+                log.info("[{}][{}] Analysing {} period candles with {} warm-up candles | aiEnabled={} | webSearch={}",
+                         symbol, periodLabel, periodCandles.size(), candles.size() - periodCandles.size(), includeAi,
                          isPrimary ? "YES (primary)" : "NO (period-specific, no web search)");
 
                 // Pass ai=true for all periods when requested.
                 // The OpenAiCommentaryService will use web search only for the primary period
                 // via a flag we set on the request context. We implement this by temporarily
                 // overriding the web search setting for non-primary periods.
-                return runAnalysis(candles, stockHistory, symbol, periodLabel, tradingBars,
+                return runAnalysis(candles, periodCandles, stockHistory, symbol, periodLabel, tradingBars,
                                    includeAi, isPrimary)
                         .flatMap(analysisResultPersistenceService::persist)
                         .doOnNext(r -> resultMap.put(periodLabel, r))
@@ -252,7 +253,8 @@ public class StockAnalyserService {
                                                       int lookbackDays,
                                                       TreeMap<LocalDate, StockHistoryDetails> existingData) {
         LocalDate today    = marketFreshnessService.analysisDate();
-        LocalDate fromDate = today.minusDays(Math.round(lookbackDays * CALENDAR_MULTIPLIER));
+        int fetchTradingDays = lookbackDays + INDICATOR_WARMUP_BARS;
+        LocalDate fromDate = today.minusDays(Math.round(fetchTradingDays * 1.4));
 
         log.info("Auto-fetching chunked data for {} | lookbackDays={} | calendarFrom={} → {}",
                 symbol, lookbackDays, fromDate, today);
@@ -271,6 +273,7 @@ public class StockAnalyserService {
      * so indicators reflect the relevant historical window.
      */
     private Mono<StockAnalysisResult> runAnalysis(List<StockHistoryDetails> candles,
+                                                   List<StockHistoryDetails> periodCandles,
                                                    StockHistory stockHistory,
                                                    String symbol,
                                                    String periodLabel,
@@ -280,7 +283,7 @@ public class StockAnalyserService {
         // Derive dates from the sliced candle list
         TreeMap<LocalDate, StockHistoryDetails> rawMap = stockHistory.getStockHistoryDetails();
 
-        if (candles == null || candles.isEmpty()) {
+        if (periodCandles == null || periodCandles.isEmpty()) {
             return Mono.just(StockAnalysisResult.builder()
                     .symbol(symbol).periodLabel(periodLabel)
                     .analysisDate(marketFreshnessService.analysisDate())
@@ -290,11 +293,10 @@ public class StockAnalyserService {
                     .build());
         }
 
-        int total          = candles.size();
+        int total          = periodCandles.size();
         LocalDate today    = marketFreshnessService.analysisDate();
-        // dataFrom / dataTo from the full map so window message makes sense
-        LocalDate dataFrom = rawMap != null && !rawMap.isEmpty() ? rawMap.firstKey() : today;
-        LocalDate dataTo   = rawMap != null && !rawMap.isEmpty() ? rawMap.lastKey()  : today;
+        LocalDate dataFrom = periodCandles.get(0).getHistoryDate();
+        LocalDate dataTo   = periodCandles.get(periodCandles.size() - 1).getHistoryDate();
 
         LocalDate requiredRecommended = requiredFromDate(RECOMMENDED_TRADING_DAYS);
         LocalDate requiredMinimum     = requiredFromDate(MINIMUM_TRADING_DAYS);
@@ -356,7 +358,7 @@ public class StockAnalyserService {
         //   Each period gets accurate, period-specific commentary (not shared/copied).
         return openAiService.generateCommentary(
                         symbol + " [" + periodLabel + "]",
-                        technical, recommendation, candles, isPrimaryPeriod)
+                        technical, recommendation, periodCandles, isPrimaryPeriod)
                 .map(commentary -> {
                     recommendation.setAiCommentary(commentary);
                     return buildResult(symbol, periodLabel, total, dataFrom, dataTo,
@@ -371,7 +373,7 @@ public class StockAnalyserService {
                                                    StockHistory stockHistory,
                                                    String symbol, String periodLabel,
                                                    int tradingBars, boolean includeAi) {
-        return runAnalysis(candles, stockHistory, symbol, periodLabel, tradingBars, includeAi, true);
+        return runAnalysis(candles, candles, stockHistory, symbol, periodLabel, tradingBars, includeAi, true);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -381,7 +383,7 @@ public class StockAnalyserService {
      * Uses 1.4× multiplier: 200 trading days ≈ 280 calendar days.
      */
     private LocalDate requiredFromDate(int tradingDays) {
-        long calendarDays = Math.round(tradingDays * CALENDAR_MULTIPLIER);
+        long calendarDays = Math.round(tradingDays * 1.4);
         return marketFreshnessService.analysisDate().minusDays(calendarDays);
     }
 

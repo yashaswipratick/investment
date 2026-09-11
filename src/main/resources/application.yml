@@ -15,30 +15,7 @@ server:
 
 fundamental:
   data-directory: ${FUNDAMENTAL_DATA_DIRECTORY:${user.dir}/src/main/resources/fundamental-data}
-  # Symbol → workbook mapping is configuration, not business logic.
-  workbooks:
-    ABB: ABB India.xlsx
-    APOLLO: Apollo Hospitals.xlsx
-    BEL: Bharat Electron.xlsx
-    BHARTIARTL: Bharti Airtel.xlsx
-    COFORGE: Coforge.xlsx
-    CUMMINSIND: Cummins India.xlsx
-    FINEORG: Fine Organic.xlsx
-    HDFCBANK: HDFC Bank.xlsx
-    HAL: Hindustan Aeronaut.xlsx
-    ICICIBANK: ICICI Bank.xlsx
-    INGERRAND: Ingersoll-Rand India.xlsx
-    LT: Larsen & Toubro.xlsx
-    LAURUSLABS: Laurus Labs.xlsx
-    MUNJALAU: Munjal Auto Inds.xlsx
-    ONGC: ONGC.xlsx
-    OIL: Oil India.xlsx
-    PERSISTENT: Persistent Systems.xlsx
-    RELIANCE: Reliance Industries.xlsx
-    SBIN: SBI.xlsx
-    SIEMENS: Siemens.xlsx
-    SOLARINDS: Solar Industries.xlsx
-    SUNPHARMA: Sun Pharma.xlsx
+  workbook-extension: .xlsx
 
 spring:
   mvc:
