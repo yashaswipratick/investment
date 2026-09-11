@@ -1,6 +1,5 @@
 package com.stock.stock_analyser.service;
 
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
@@ -17,7 +16,6 @@ import java.util.Set;
 /** Resolves NSE equity holidays from the official page with a deterministic fallback. */
 @Component
 public class NseHolidayCalendarService {
-    private static final String NSE_HOLIDAY_URL = "https://www.nseindia.com/resources/exchange-communication-holidays";
     private final Map<Integer, Set<LocalDate>> cache = new HashMap<>();
 
     public synchronized Set<LocalDate> holidaysForYear(int year) {
@@ -25,17 +23,21 @@ public class NseHolidayCalendarService {
     }
 
     Set<LocalDate> loadHolidayCalendar(int year) {
-        try {
-            Document document = Jsoup.connect(NSE_HOLIDAY_URL)
-                    .userAgent("Mozilla/5.0 Marcus/1.0")
-                    .timeout(5000)
-                    .get();
-            Set<LocalDate> parsed = parseHolidayDates(document, year);
-            if (!parsed.isEmpty()) return Set.copyOf(parsed);
-        } catch (Exception ignored) {
-            // Keep freshness deterministic when NSE is temporarily unavailable.
-        }
-        return Set.copyOf(BUNDLED_HOLIDAYS.getOrDefault(year, Set.of()));
+        // Freshness must never perform synchronous network I/O. Use only the
+        // verified local calendar; a missing year fails closed.
+        Set<LocalDate> local = BUNDLED_HOLIDAYS.get(year);
+        return local == null ? null : Set.copyOf(local);
+    }
+
+    /** Optional parser utility for an externally refreshed document; never called by freshness. */
+    static Set<LocalDate> parseAndValidateHolidayDates(Document document, int year) {
+        Set<LocalDate> parsed = parseHolidayDates(document, year);
+        return isCompleteCalendar(parsed, year) ? Set.copyOf(parsed) : Set.of();
+    }
+
+    private static boolean isCompleteCalendar(Set<LocalDate> holidays, int year) {
+        if (holidays == null || holidays.size() < 15) return false;
+        return holidays.stream().allMatch(date -> date != null && date.getYear() == year);
     }
 
     static Set<LocalDate> parseHolidayDates(Document document, int year) {

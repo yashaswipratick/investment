@@ -35,10 +35,15 @@ public class NseMarketFreshnessService {
     }
 
     NseMarketFreshnessService(Clock clock, LocalTime marketDataClose, Set<LocalDate> holidays) {
+        this(clock, marketDataClose, holidays, null);
+    }
+
+    NseMarketFreshnessService(Clock clock, LocalTime marketDataClose, Set<LocalDate> holidays,
+                              NseHolidayCalendarService holidayCalendarService) {
         this.clock = clock.withZone(NSE_ZONE);
         this.marketDataClose = marketDataClose;
         this.configuredHolidays = holidays == null ? Set.of() : Collections.unmodifiableSet(new HashSet<>(holidays));
-        this.holidayCalendarService = null;
+        this.holidayCalendarService = holidayCalendarService;
     }
 
     public LocalDate analysisDate() { return LocalDate.now(clock); }
@@ -53,7 +58,11 @@ public class NseMarketFreshnessService {
         DayOfWeek day = date.getDayOfWeek();
         if (day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY) return false;
         Set<LocalDate> holidays = new HashSet<>(configuredHolidays);
-        if (holidayCalendarService != null) holidays.addAll(holidayCalendarService.holidaysForYear(date.getYear()));
+        if (holidayCalendarService != null) {
+            Set<LocalDate> calendar = holidayCalendarService.holidaysForYear(date.getYear());
+            if (calendar == null) return false; // fail closed if calendar cannot be established
+            holidays.addAll(calendar);
+        }
         return !holidays.contains(date);
     }
 

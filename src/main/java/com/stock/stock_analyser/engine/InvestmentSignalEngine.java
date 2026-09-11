@@ -230,8 +230,9 @@ public class InvestmentSignalEngine {
             String technicalStatus = technicalCriteria.getOverallStatus();
             String fundamentalStatus = fundamentalCriteria.getOverallStatus();
             if ("PASS".equals(technicalStatus) && "PASS".equals(fundamentalStatus)) {
-                // Generic score remains informational; only a passing hard gate permits BUY.
-                if (!"BUY".equals(action)) action = "HOLD";
+                // Marcus hard gates are authoritative. The legacy score remains
+                // confidence/ranking information and must not downgrade PASS/PASS.
+                action = "BUY";
             } else if ("UNAVAILABLE".equals(fundamentalStatus)) {
                 action = "INSUFFICIENT_DATA";
                 timeframe = "MEDIUM_TERM";
@@ -279,7 +280,7 @@ public class InvestmentSignalEngine {
                     ? t.getResistanceLevel()
                     : minimumTarget;
             if (t.getFiftyTwoWeekHigh() != null && t.getFiftyTwoWeekHigh() >= minimumTarget
-                    && t.getFiftyTwoWeekHigh() > target && score > 70) target = t.getFiftyTwoWeekHigh();
+                    && t.getFiftyTwoWeekHigh() > target) target = t.getFiftyTwoWeekHigh();
             if (!(target > entryHigh)) target = entryHigh + riskPerUnit * 2.0;
 
             // Single documented convention: R:R uses the conservative/worst-case
