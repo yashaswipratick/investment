@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import jakarta.annotation.PostConstruct;
@@ -28,7 +27,6 @@ import java.util.*;
 public class FundamentalAnalysisService {
 
     private static final double DAYS_PER_YEAR = 365.2425;
-    private final String dataDirectoryValue;
     private final FundamentalDataParser parser;
     private final FundamentalWorkbookResolver workbookResolver;
 
@@ -36,14 +34,12 @@ public class FundamentalAnalysisService {
     public FundamentalAnalysisService(FundamentalDataConfiguration workbookConfiguration,
                                       FundamentalDataParser parser,
                                       FundamentalWorkbookResolver workbookResolver) {
-        this.dataDirectoryValue = workbookConfiguration.getDataDirectory();
         this.parser = parser;
         this.workbookResolver = workbookResolver;
     }
 
     /** Test-friendly constructor: pure analysis tests do not need filesystem configuration. */
     FundamentalAnalysisService(String dataDirectory, FundamentalDataParser parser) {
-        this.dataDirectoryValue = dataDirectory;
         this.parser = parser;
         FundamentalDataConfiguration configuration = new FundamentalDataConfiguration();
         configuration.setDataDirectory(dataDirectory);
@@ -54,30 +50,14 @@ public class FundamentalAnalysisService {
 
     @PostConstruct
     void validateConfiguration() {
-        if (dataDirectoryValue == null || dataDirectoryValue.isBlank()) {
-            log.warn("Fundamental data directory is not configured.");
-            return;
-        }
-        Path dataDirectory = Paths.get(dataDirectoryValue).normalize();
-        if (!Files.isDirectory(dataDirectory)) {
-            log.warn("Fundamental data directory is unavailable: {}", dataDirectory);
-        }
+        // Workbook location and path containment are owned by FundamentalWorkbookResolver.
     }
 
     public FundamentalAnalysis analyse(String symbol) {
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
-        if (dataDirectoryValue == null || dataDirectoryValue.isBlank()) return unavailable("Fundamental data directory is not configured.");
-        Path dataDirectory;
-        try {
-            dataDirectory = Paths.get(dataDirectoryValue).normalize();
-        } catch (RuntimeException e) {
-            return unavailable("Invalid fundamental data directory configuration.");
-        }
-        if (!Files.isDirectory(dataDirectory)) return unavailable("Fundamental data directory is unavailable: " + dataDirectory);
         Optional<Path> resolved = workbookResolver.resolve(normalized);
         if (resolved.isEmpty()) return unavailable("Fundamental workbook not found or invalid for " + normalized + ".");
         Path file = resolved.get();
-        if (!file.startsWith(dataDirectory)) return unavailable("Invalid workbook path for " + normalized + ".");
         try (InputStream in = Files.newInputStream(file); Workbook workbook = WorkbookFactory.create(in)) {
             return analyse(parser.parse(workbook, normalized));
         } catch (Exception e) {

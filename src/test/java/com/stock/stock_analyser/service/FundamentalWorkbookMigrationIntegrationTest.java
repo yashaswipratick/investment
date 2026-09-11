@@ -5,14 +5,23 @@ import com.stock.stock_analyser.fundamental.FundamentalDataConfiguration;
 import com.stock.stock_analyser.fundamental.FundamentalWorkbookIndex;
 import com.stock.stock_analyser.fundamental.FundamentalWorkbookResolver;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class FundamentalWorkbookMigrationIntegrationTest {
-    @Test void migratedMunjalauWorkbookRemainsAnalyzable() {
-        Path directory = Path.of(System.getProperty("user.dir"), "src/main/resources/fundamental-data");
+    @Test void migratedMunjalauWorkbookRemainsAnalyzable(@TempDir Path tempDirectory) throws IOException {
+        Path directory = tempDirectory.resolve("fundamental-data");
+        Files.createDirectories(directory);
+        try (InputStream workbook = getClass().getResourceAsStream("/fundamental-data/MUNJALAU.xlsx")) {
+            if (workbook == null) throw new IOException("Migrated MUNJALAU.xlsx test resource is missing");
+            Files.copy(workbook, directory.resolve("MUNJALAU.xlsx"));
+        }
         FundamentalDataConfiguration config = new FundamentalDataConfiguration();
         config.setDataDirectory(directory.toString());
         config.setWorkbookExtension(".xlsx");
