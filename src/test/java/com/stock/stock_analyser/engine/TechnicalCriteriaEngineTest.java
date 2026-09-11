@@ -10,14 +10,17 @@ class TechnicalCriteriaEngineTest {
     private TechnicalSignals passing() {
         return TechnicalSignals.builder().currentPrice(110.0).ema50(105.0).ema200(90.0).sma50(105.0).sma200(90.0).rsi14(60.0).macdSignalType("BULLISH")
                 .currentVolume(200.0).avgVolume20(100.0).volumeSpike(true).fiftyTwoWeekHigh(112.0).adx14(30.0)
-                .breakoutAnalysis(BreakoutResult.builder().signal("FRESH_BREAKOUT").daysAgoBreakout(1).breakoutLevel(108.0).build()).build();
+                .breakoutAnalysis(BreakoutResult.builder().signal("FRESH_BREAKOUT").daysAgoBreakout(1).breakoutLevel(108.0).breakoutVolumeRatio(2.0).build()).build();
     }
     @Test void lockedTechnicalGatePassesWhenAllConditionsPass() {
         TechnicalCriteriaResult r=engine.evaluate(passing()); assertEquals("PASS",r.getOverallStatus());
         assertEquals("PASS",r.getPriceTrendStatus()); assertEquals("PASS",r.getRsiStatus()); assertEquals("PASS",r.getMacdStatus());
         assertEquals("PASS",r.getBreakoutVolumeStatus()); assertEquals("PASS",r.getBreakoutStatus()); assertEquals("PASS",r.getAdxStatus());
     }
-    @Test void rsiAndVolumeFailuresBlockTechnicalGate() { TechnicalSignals t=passing(); t.setRsi14(54.9); t.setVolumeSpike(false); TechnicalCriteriaResult r=engine.evaluate(t); assertEquals("FAIL",r.getOverallStatus()); assertEquals("FAIL",r.getRsiStatus()); assertEquals("FAIL",r.getBreakoutVolumeStatus()); }
+    @Test void breakoutDayVolumePassesEvenWhenCurrentVolumeSpikeIsFalse() { TechnicalSignals t=passing(); t.setVolumeSpike(false); TechnicalCriteriaResult r=engine.evaluate(t); assertEquals("PASS",r.getBreakoutVolumeStatus()); }
+    @Test void breakoutDayVolumeBelowThresholdFails() { TechnicalSignals t=passing(); t.getBreakoutAnalysis().setBreakoutVolumeRatio(1.2); TechnicalCriteriaResult r=engine.evaluate(t); assertEquals("FAIL",r.getBreakoutVolumeStatus()); }
+    @Test void missingBreakoutDayVolumeIsUnavailable() { TechnicalSignals t=passing(); t.getBreakoutAnalysis().setBreakoutVolumeRatio(null); TechnicalCriteriaResult r=engine.evaluate(t); assertEquals("UNAVAILABLE",r.getBreakoutVolumeStatus()); }
+    @Test void rsiFailureStillBlocksTechnicalGate() { TechnicalSignals t=passing(); t.setRsi14(54.9); TechnicalCriteriaResult r=engine.evaluate(t); assertEquals("FAIL",r.getOverallStatus()); assertEquals("FAIL",r.getRsiStatus()); }
     @Test void missingLongTermDataIsUnavailable() { TechnicalSignals t=passing(); t.setEma200(null); t.setAdx14(null); TechnicalCriteriaResult r=engine.evaluate(t); assertEquals("UNAVAILABLE",r.getOverallStatus()); assertEquals("UNAVAILABLE",r.getPriceTrendStatus()); assertEquals("UNAVAILABLE",r.getAdxStatus()); }
     @Test void historicalBreakoutDoesNotPassWhenNotNear52WeekHigh() { TechnicalSignals t=passing(); t.setFiftyTwoWeekHigh(150.0); t.setCurrentPrice(110.0); t.getBreakoutAnalysis().setSignal("HISTORICAL_BREAKOUT"); assertEquals("FAIL",engine.evaluate(t).getBreakoutStatus()); }
 }
