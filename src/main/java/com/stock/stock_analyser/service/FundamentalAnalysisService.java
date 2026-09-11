@@ -1,8 +1,12 @@
 package com.stock.stock_analyser.service;
 
 import com.stock.stock_analyser.dto.FundamentalAnalysis;
+import com.stock.stock_analyser.fundamental.FundamentalDataParser;
+import com.stock.stock_analyser.fundamental.FundamentalDataSet;
+import com.stock.stock_analyser.fundamental.FundamentalPeriodData;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -10,8 +14,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -29,13 +31,16 @@ public class FundamentalAnalysisService {
             Map.entry("ONGC", "ONGC.xlsx"), Map.entry("OIL", "Oil India.xlsx"),
             Map.entry("PERSISTENT", "Persistent Systems.xlsx"), Map.entry("RELIANCE", "Reliance Industries.xlsx"),
             Map.entry("SBIN", "SBI.xlsx"), Map.entry("SIEMENS", "Siemens.xlsx"),
-            Map.entry("SOLARINDS", "Solar Industries.xlsx"), Map.entry("SUNPHARMA", "Sun Pharma.xlsx")
-    );
+            Map.entry("SOLARINDS", "Solar Industries.xlsx"), Map.entry("SUNPHARMA", "Sun Pharma.xlsx"));
 
     private final Path dataDirectory;
+    private final FundamentalDataParser parser;
 
-    public FundamentalAnalysisService(@Value("${fundamental.data-directory:${user.home}/Downloads/stock-fundamental-data}") String dataDirectory) {
+    public FundamentalAnalysisService(
+            @Value("${fundamental.data-directory:${user.home}/Downloads/stock-fundamental-data}") String dataDirectory,
+            FundamentalDataParser parser) {
         this.dataDirectory = Paths.get(dataDirectory);
+        this.parser = parser;
     }
 
     public FundamentalAnalysis analyse(String symbol) {
@@ -45,94 +50,69 @@ public class FundamentalAnalysisService {
         Path file = dataDirectory.resolve(filename);
         if (!Files.isRegularFile(file)) return unavailable("Fundamental workbook not found: " + file);
         try (InputStream in = Files.newInputStream(file); Workbook workbook = WorkbookFactory.create(in)) {
-            return calculate(workbook, normalized);
+            return analyse(parser.parse(workbook, normalized));
         } catch (Exception e) {
             log.warn("Unable to read fundamentals for {}: {}", normalized, e.getMessage());
             return unavailable("Unable to read fundamental data: " + e.getMessage());
         }
     }
 
-    private FundamentalAnalysis calculate(Workbook workbook, String symbol) {
-        Sheet sheet = workbook.getSheet("Data Sheet");
-        if (sheet == null) return unavailable("Data Sheet is missing for " + symbol + ".");
+    /** Pure analysis layer: calculations operate only on the normalized data contract. */
+    FundamentalAnalysis analyse(FundamentalDataSet data) {
+        List<FundamentalPeriodData> periods = data.annualPeriods();
+        if (periods.size() < 2) return unavailable("Insufficient annual fundamental history for " + data.symbol() + ".");
 
-        List<Period> periods = readAnnualPeriods(sheet);
-        if (periods.size() < 2) return unavailable("Insufficient annual fundamental history for " + symbol + ".");
+        FundamentalPeriodData latest = periods.get(periods.size() - 1);
+        FundamentalPeriodData previous = periods.get(periods.size() - 2);
+        FundamentalPeriodData threeYearsAgo = periods.get(Math.max(0, periods.size() - 4));
+        FundamentalPeriodData fiveYearsAgo = periods.get(Math.max(0, periods.size() - 6));
 
-        Period latest = periods.get(periods.size() - 1);
-        Period previous = periods.get(periods.size() - 2);
-        Period threeYearsAgo = periods.get(Math.max(0, periods.size() - 4));
-        Period fiveYearsAgo = periods.get(Math.max(0, periods.size() - 6));
-
-        double netWorth = latest.equity + latest.reserves;
-        double previousNetWorth = previous.equity + previous.reserves;
+        double netWorth = n(latest.equity()) + n(latest.reserves());
+        double previousNetWorth = n(previous.equity()) + n(previous.reserves());
         double avgNetWorth = (netWorth + previousNetWorth) / 2.0;
-        double eps = safeRatio(latest.profit, latest.shares);
-        double previousEps = safeRatio(previous.profit, previous.shares);
-        double revenueCagr3Y = cagr(latest.sales, threeYearsAgo.sales, periods.size() >= 4 ? 3 : periods.size() - 1);
-        double revenueCagr5Y = cagr(latest.sales, fiveYearsAgo.sales, periods.size() >= 6 ? 5 : periods.size() - 1);
-        double epsCagr3Y = cagr(eps, safeRatio(threeYearsAgo.profit, threeYearsAgo.shares), periods.size() >= 4 ? 3 : periods.size() - 1);
+        double eps = safeRatio(n(latest.profit()), n(latest.shares()));
+        double previousEps = safeRatio(n(previous.profit()), n(previous.shares()));
+        double revenueCagr3Y = cagr(n(latest.sales()), n(threeYearsAgo.sales()), periods.size() >= 4 ? 3 : periods.size() - 1);
+        double revenueCagr5Y = cagr(n(latest.sales()), n(fiveYearsAgo.sales()), periods.size() >= 6 ? 5 : periods.size() - 1);
+        double epsCagr3Y = cagr(eps, safeRatio(n(threeYearsAgo.profit()), n(threeYearsAgo.shares())), periods.size() >= 4 ? 3 : periods.size() - 1);
         double epsGrowthYoY = pct(eps, previousEps);
-        double netMargin = safeRatio(latest.profit, latest.sales) * 100;
-        double roe = safeRatio(latest.profit, avgNetWorth) * 100;
-        double debtToEquity = safeRatio(latest.borrowings, netWorth);
-        double ebit = latest.pbt + latest.interest - latest.otherIncome;
-        double interestCoverage = latest.interest > 0 ? ebit / latest.interest : Double.NaN;
-        double cfoToPat = safeRatio(latest.cfo, latest.profit) * 100;
+        double netMargin = safeRatio(n(latest.profit()), n(latest.sales())) * 100;
+        double roe = safeRatio(n(latest.profit()), avgNetWorth) * 100;
+        double debtToEquity = safeRatio(n(latest.borrowings()), netWorth);
+        double ebit = n(latest.pbt()) + n(latest.interest()) - n(latest.otherIncome());
+        double interestCoverage = n(latest.interest()) > 0 ? ebit / n(latest.interest()) : Double.NaN;
+        double cfoToPat = safeRatio(n(latest.cfo()), n(latest.profit())) * 100;
 
-        int positiveProfitYears = (int) periods.stream().filter(p -> p.profit > 0).count();
+        int positiveProfitYears = (int) periods.stream().filter(p -> n(p.profit()) > 0).count();
         int positiveRevenueGrowthYears = 0;
-        for (int i = 1; i < periods.size(); i++) if (periods.get(i).sales > periods.get(i - 1).sales) positiveRevenueGrowthYears++;
+        for (int i = 1; i < periods.size(); i++) if (n(periods.get(i).sales()) > n(periods.get(i - 1).sales())) positiveRevenueGrowthYears++;
 
-        boolean bank = Set.of("HDFCBANK", "ICICIBANK", "SBIN").contains(symbol);
-        double pe = latest.price > 0 ? safeRatio(latest.price, eps) : Double.NaN;
-        double pb = latest.marketCap > 0 ? safeRatio(latest.marketCap, netWorth) : Double.NaN;
+        boolean bank = Set.of("HDFCBANK", "ICICIBANK", "SBIN").contains(data.symbol());
+        double pe = n(latest.price()) > 0 ? safeRatio(n(latest.price()), eps) : Double.NaN;
+        double pb = n(latest.marketCap()) > 0 ? safeRatio(n(latest.marketCap()), netWorth) : Double.NaN;
 
         double growth = average(scoreGrowth(revenueCagr3Y), scoreGrowth(epsGrowthYoY), scoreGrowth(epsCagr3Y));
         double profitability = average(scoreRoe(roe), scoreMargin(netMargin));
         double health = bank ? Double.NaN : average(scoreDebt(debtToEquity), scoreCoverage(interestCoverage), scoreNetWorthTrend(netWorth - previousNetWorth));
-        double cash = average(scoreCashConversion(cfoToPat), scoreConsistency(positiveProfitYears, periods.size()), scoreCfo(latest.cfo));
+        double cash = average(scoreCashConversion(cfoToPat), scoreConsistency(positiveProfitYears, periods.size()), scoreCfo(n(latest.cfo())));
         double consistency = average(scoreConsistency(positiveProfitYears, periods.size()), scoreConsistency(positiveRevenueGrowthYears, Math.max(1, periods.size() - 1)));
         double valuation = average(scorePe(pe), scorePb(pb));
         double overall = weightedAvailable(growth, 25, profitability, 20, health, 15, cash, 15, consistency, 10, valuation, 15);
 
         return FundamentalAnalysis.builder()
                 .status("AVAILABLE").confidence(periods.size() >= 8 ? "HIGH" : periods.size() >= 5 ? "MEDIUM" : "LOW")
-                .latestPeriod(latest.date).periodsAvailable(periods.size())
+                .latestPeriod(latest.date()).periodsAvailable(periods.size())
                 .revenueCagr3Y(round(revenueCagr3Y)).revenueCagr5Y(round(revenueCagr5Y)).eps(round(eps)).epsGrowthYoY(round(epsGrowthYoY)).epsCagr3Y(round(epsCagr3Y))
                 .netMargin(round(netMargin)).roe(round(roe)).debtToEquity(bank ? null : round(debtToEquity)).interestCoverage(bank ? null : round(interestCoverage)).cfoToPat(round(cfoToPat))
                 .positiveProfitYears(positiveProfitYears).positiveRevenueGrowthYears(positiveRevenueGrowthYears).peRatio(round(pe)).pbRatio(round(pb))
                 .growthScore(round(growth)).profitabilityScore(round(profitability)).financialHealthScore(bank ? null : round(health)).cashFlowScore(round(cash))
                 .consistencyScore(round(consistency)).valuationScore(round(valuation)).overallScore(round(overall))
                 .valuationLabel(valuationLabel(pe, pb)).summary(summary(growth, profitability, cash, valuationLabel(pe, pb)))
-                .dataNote("Derived from the configured annual workbook; latest period " + latest.date + ".")
+                .dataNote("Derived from the configured annual workbook; latest period " + latest.date() + ".")
                 .build();
     }
 
-    private List<Period> readAnnualPeriods(Sheet s) {
-        Row dates = s.getRow(15), sales = s.getRow(16), profit = s.getRow(29), equity = s.getRow(56), reserves = s.getRow(57), debt = s.getRow(58), pbt = s.getRow(27), interest = s.getRow(26), otherIncome = s.getRow(24), cfo = s.getRow(81), currentPrice = s.getRow(7), currentMarketCap = s.getRow(8), shares = s.getRow(92);
-        List<Period> result = new ArrayList<>();
-        for (int c = 1; c < 20; c++) {
-            Double dateValue = value(dates, c);
-            if (dateValue == null || Double.isNaN(dateValue)) continue;
-            LocalDate date = DateUtil.getJavaDate(dateValue).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-            result.add(new Period(date, n(sales,c), n(profit,c), n(equity,c), n(reserves,c), n(debt,c), n(pbt,c), n(interest,c), n(otherIncome,c), n(cfo,c), n(currentPrice,1), n(currentMarketCap,1), n(shares,c)));
-        }
-        return result;
-    }
-
-    private double n(Row r, int c) { Double v = value(r,c); return v == null || Double.isNaN(v) ? 0 : v; }
-    private Double value(Row r, int c) {
-        if (r == null || r.getCell(c) == null) return null;
-        Cell cell = r.getCell(c);
-        try {
-            if (cell.getCellType() == CellType.NUMERIC) return cell.getNumericCellValue();
-            if (cell.getCellType() == CellType.FORMULA && cell.getCachedFormulaResultType() == CellType.NUMERIC) return cell.getNumericCellValue();
-            String text = cell.toString().replace(",", "").trim();
-            return text.isEmpty() ? null : Double.parseDouble(text);
-        } catch (Exception e) { return null; }
-    }
-
+    private double n(Double value) { return value == null || Double.isNaN(value) ? 0 : value; }
     private double safeRatio(double a, double b) { return b == 0 ? Double.NaN : a / b; }
     private double pct(double a, double b) { return Double.isNaN(a) || Double.isNaN(b) || b == 0 ? Double.NaN : (a / b - 1) * 100; }
     private double cagr(double end, double start, int years) { return end > 0 && start > 0 && years > 0 ? (Math.pow(end / start, 1.0 / years) - 1) * 100 : Double.NaN; }
@@ -154,6 +134,4 @@ public class FundamentalAnalysisService {
     private String summary(double growth,double profitability,double cash,String valuation){return String.format("Growth %.0f/100, profitability %.0f/100, cash flow %.0f/100; valuation %s.",growth,profitability,cash,valuation);}
     private Double round(double v){return Double.isNaN(v)||Double.isInfinite(v)?null:Math.round(v*100.0)/100.0;}
     private FundamentalAnalysis unavailable(String note){return FundamentalAnalysis.builder().status("UNAVAILABLE").confidence("UNAVAILABLE").summary("Fundamental analysis is unavailable; technical analysis can continue normally.").dataNote(note).build();}
-
-    private record Period(LocalDate date,double sales,double profit,double equity,double reserves,double borrowings,double pbt,double interest,double otherIncome,double cfo,double price,double marketCap,double shares) {}
 }
