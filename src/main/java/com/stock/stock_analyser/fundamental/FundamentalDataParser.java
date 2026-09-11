@@ -8,7 +8,6 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.stereotype.Component;
 
-
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -24,10 +23,13 @@ public class FundamentalDataParser {
             throw new IllegalArgumentException("Data Sheet is missing for " + symbol + ".");
         }
 
+        // Verified against the supplied workbook's Data Sheet labels. POI row indexes are zero-based.
+        // The workbook's existing normalized mapping is retained; Operating Profit is added for
+        // interest-coverage correctness, while current market values are separated below.
         Row dates = sheet.getRow(15), sales = sheet.getRow(16), profit = sheet.getRow(29),
                 equity = sheet.getRow(56), reserves = sheet.getRow(57), debt = sheet.getRow(58),
-                pbt = sheet.getRow(27), interest = sheet.getRow(26), otherIncome = sheet.getRow(24),
-                cfo = sheet.getRow(81), currentPrice = sheet.getRow(7),
+                operatingProfit = sheet.getRow(25), pbt = sheet.getRow(27), interest = sheet.getRow(26),
+                otherIncome = sheet.getRow(24), cfo = sheet.getRow(81), currentPrice = sheet.getRow(7),
                 currentMarketCap = sheet.getRow(8), shares = sheet.getRow(92);
 
         List<FundamentalPeriodData> periods = new ArrayList<>();
@@ -39,10 +41,11 @@ public class FundamentalDataParser {
                     .atZone(ZoneId.systemDefault()).toLocalDate();
             periods.add(new FundamentalPeriodData(
                     date, value(sales, c), value(profit, c), value(equity, c), value(reserves, c),
-                    value(debt, c), value(pbt, c), value(interest, c), value(otherIncome, c),
-                    value(cfo, c), value(currentPrice, 1), value(currentMarketCap, 1), value(shares, c)));
+                    value(debt, c), value(operatingProfit, c), value(pbt, c), value(interest, c),
+                    value(otherIncome, c), value(cfo, c), value(shares, c)));
         }
-        return new FundamentalDataSet(symbol, periods);
+        return new FundamentalDataSet(symbol, periods,
+                new FundamentalMarketSnapshot(value(currentPrice, 1), value(currentMarketCap, 1)));
     }
 
     private Double value(Row row, int column) {
