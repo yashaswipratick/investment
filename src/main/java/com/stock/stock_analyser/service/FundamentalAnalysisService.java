@@ -67,37 +67,47 @@ public class FundamentalAnalysisService {
         FundamentalPeriodData threeYearsAgo = periods.get(Math.max(0, periods.size() - 4));
         FundamentalPeriodData fiveYearsAgo = periods.get(Math.max(0, periods.size() - 6));
 
-        double netWorth = n(latest.equity()) + n(latest.reserves());
-        double previousNetWorth = n(previous.equity()) + n(previous.reserves());
-        double avgNetWorth = (netWorth + previousNetWorth) / 2.0;
-        double eps = safeRatio(n(latest.profit()), n(latest.shares()));
-        double previousEps = safeRatio(n(previous.profit()), n(previous.shares()));
-        double revenueCagr3Y = cagr(n(latest.sales()), n(threeYearsAgo.sales()), periods.size() >= 4 ? 3 : periods.size() - 1);
-        double revenueCagr5Y = cagr(n(latest.sales()), n(fiveYearsAgo.sales()), periods.size() >= 6 ? 5 : periods.size() - 1);
-        double epsCagr3Y = cagr(eps, safeRatio(n(threeYearsAgo.profit()), n(threeYearsAgo.shares())), periods.size() >= 4 ? 3 : periods.size() - 1);
-        double epsGrowthYoY = pct(eps, previousEps);
-        double netMargin = safeRatio(n(latest.profit()), n(latest.sales())) * 100;
-        double roe = safeRatio(n(latest.profit()), avgNetWorth) * 100;
-        double debtToEquity = safeRatio(n(latest.borrowings()), netWorth);
-        double ebit = n(latest.pbt()) + n(latest.interest()) - n(latest.otherIncome());
-        double interestCoverage = n(latest.interest()) > 0 ? ebit / n(latest.interest()) : Double.NaN;
-        double cfoToPat = safeRatio(n(latest.cfo()), n(latest.profit())) * 100;
+        Double netWorth = sum(latest.equity(), latest.reserves());
+        Double previousNetWorth = sum(previous.equity(), previous.reserves());
+        Double avgNetWorth = averageValue(netWorth, previousNetWorth);
+        Double eps = safeRatio(latest.profit(), latest.shares());
+        Double previousEps = safeRatio(previous.profit(), previous.shares());
+        Double revenueCagr3Y = cagr(latest.sales(), threeYearsAgo.sales(), periods.size() >= 4 ? 3 : periods.size() - 1);
+        Double revenueCagr5Y = cagr(latest.sales(), fiveYearsAgo.sales(), periods.size() >= 6 ? 5 : periods.size() - 1);
+        Double threeYearsAgoEps = safeRatio(threeYearsAgo.profit(), threeYearsAgo.shares());
+        Double epsCagr3Y = cagr(eps, threeYearsAgoEps, periods.size() >= 4 ? 3 : periods.size() - 1);
+        Double epsGrowthYoY = pct(eps, previousEps);
+        Double netMargin = percentage(safeRatio(latest.profit(), latest.sales()));
+        Double roe = percentage(safeRatio(latest.profit(), avgNetWorth));
+        Double debtToEquity = safeRatio(latest.borrowings(), netWorth);
+        Double ebit = subtract(sum(latest.pbt(), latest.interest()), latest.otherIncome());
+        Double interestCoverage = latest.interest() != null && latest.interest() > 0 && ebit != null ? ebit / latest.interest() : null;
+        Double cfoToPat = percentage(safeRatio(latest.cfo(), latest.profit()));
 
-        int positiveProfitYears = (int) periods.stream().filter(p -> n(p.profit()) > 0).count();
+        int availableProfitYears = (int) periods.stream().filter(p -> p.profit() != null).count();
+        int positiveProfitYears = (int) periods.stream().filter(p -> p.profit() != null && p.profit() > 0).count();
+        int availableRevenueGrowthYears = 0;
         int positiveRevenueGrowthYears = 0;
-        for (int i = 1; i < periods.size(); i++) if (n(periods.get(i).sales()) > n(periods.get(i - 1).sales())) positiveRevenueGrowthYears++;
+        for (int i = 1; i < periods.size(); i++) {
+            Double currentSales = periods.get(i).sales();
+            Double previousSales = periods.get(i - 1).sales();
+            if (currentSales != null && previousSales != null) {
+                availableRevenueGrowthYears++;
+                if (currentSales > previousSales) positiveRevenueGrowthYears++;
+            }
+        }
 
         boolean bank = Set.of("HDFCBANK", "ICICIBANK", "SBIN").contains(data.symbol());
-        double pe = n(latest.price()) > 0 ? safeRatio(n(latest.price()), eps) : Double.NaN;
-        double pb = n(latest.marketCap()) > 0 ? safeRatio(n(latest.marketCap()), netWorth) : Double.NaN;
+        Double pe = latest.price() != null && latest.price() > 0 ? safeRatio(latest.price(), eps) : null;
+        Double pb = latest.marketCap() != null && latest.marketCap() > 0 ? safeRatio(latest.marketCap(), netWorth) : null;
 
-        double growth = average(scoreGrowth(revenueCagr3Y), scoreGrowth(epsGrowthYoY), scoreGrowth(epsCagr3Y));
-        double profitability = average(scoreRoe(roe), scoreMargin(netMargin));
-        double health = bank ? Double.NaN : average(scoreDebt(debtToEquity), scoreCoverage(interestCoverage), scoreNetWorthTrend(netWorth - previousNetWorth));
-        double cash = average(scoreCashConversion(cfoToPat), scoreConsistency(positiveProfitYears, periods.size()), scoreCfo(n(latest.cfo())));
-        double consistency = average(scoreConsistency(positiveProfitYears, periods.size()), scoreConsistency(positiveRevenueGrowthYears, Math.max(1, periods.size() - 1)));
-        double valuation = average(scorePe(pe), scorePb(pb));
-        double overall = weightedAvailable(growth, 25, profitability, 20, health, 15, cash, 15, consistency, 10, valuation, 15);
+        Double growth = average(scoreGrowth(revenueCagr3Y), scoreGrowth(epsGrowthYoY), scoreGrowth(epsCagr3Y));
+        Double profitability = average(scoreRoe(roe), scoreMargin(netMargin));
+        Double health = bank ? null : average(scoreDebt(debtToEquity), scoreCoverage(interestCoverage), scoreNetWorthTrend(subtract(netWorth, previousNetWorth)));
+        Double cash = average(scoreCashConversion(cfoToPat), scoreConsistency(positiveProfitYears, availableProfitYears), scoreCfo(latest.cfo()));
+        Double consistency = average(scoreConsistency(positiveProfitYears, availableProfitYears), scoreConsistency(positiveRevenueGrowthYears, availableRevenueGrowthYears));
+        Double valuation = average(scorePe(pe), scorePb(pb));
+        Double overall = weightedAvailable(growth, 25.0, profitability, 20.0, health, 15.0, cash, 15.0, consistency, 10.0, valuation, 15.0);
 
         return FundamentalAnalysis.builder()
                 .status("AVAILABLE").confidence(periods.size() >= 8 ? "HIGH" : periods.size() >= 5 ? "MEDIUM" : "LOW")
@@ -112,26 +122,30 @@ public class FundamentalAnalysisService {
                 .build();
     }
 
-    private double n(Double value) { return value == null || Double.isNaN(value) ? 0 : value; }
-    private double safeRatio(double a, double b) { return b == 0 ? Double.NaN : a / b; }
-    private double pct(double a, double b) { return Double.isNaN(a) || Double.isNaN(b) || b == 0 ? Double.NaN : (a / b - 1) * 100; }
-    private double cagr(double end, double start, int years) { return end > 0 && start > 0 && years > 0 ? (Math.pow(end / start, 1.0 / years) - 1) * 100 : Double.NaN; }
-    private double average(double... values) { double sum=0,n=0; for(double v:values) if(!Double.isNaN(v)){sum+=v;n++;} return n==0?Double.NaN:sum/n; }
-    private double weightedAvailable(double... values) { double sum=0,w=0; for(int i=0;i<values.length;i+=2){double v=values[i], wt=values[i+1]; if(!Double.isNaN(v)){sum+=v*wt;w+=wt;}} return w==0?Double.NaN:sum/w; }
-    private double scoreGrowth(double v){return bucket(v,5,10,15,25);}
-    private double scoreRoe(double v){return bucket(v,8,12,18,25);}
-    private double scoreMargin(double v){return bucket(v,5,8,12,20);}
-    private double scoreDebt(double v){if(Double.isNaN(v))return Double.NaN; return v<=0.1?100:v<=0.25?90:v<=0.5?75:v<=0.8?50:25;}
-    private double scoreCoverage(double v){return Double.isInfinite(v)?100:bucket(v,2,4,7,10);}
-    private double scoreNetWorthTrend(double v){return v>1000?100:v>500?85:v>0?70:v==0?50:25;}
-    private double scoreCashConversion(double v){return bucket(v,50,80,100,130);}
-    private double scoreConsistency(int positive,int total){return total<=0?Double.NaN:Math.min(100, Math.max(25, positive*100.0/total));}
-    private double scoreCfo(double v){return v>1000?100:v>500?85:v>100?70:v>0?50:25;}
-    private double scorePe(double v){if(Double.isNaN(v)||v<=0)return Double.NaN; return v<=15?100:v<=20?90:v<=30?75:v<=40?50:25;}
-    private double scorePb(double v){if(Double.isNaN(v)||v<=0)return Double.NaN; return v<=2?100:v<=3?90:v<=5?75:v<=10?50:25;}
-    private double bucket(double v,double a,double b,double c,double d){if(Double.isNaN(v))return Double.NaN; return v<=a?25:v<=b?50:v<=c?75:100;}
-    private String valuationLabel(double pe,double pb){if((!Double.isNaN(pe)&&pe>50)||(!Double.isNaN(pb)&&pb>10))return "EXPENSIVE"; if((!Double.isNaN(pe)&&pe>30)||(!Double.isNaN(pb)&&pb>5))return "RICH"; if((!Double.isNaN(pe)&&pe>0&&pe<18)&&(!Double.isNaN(pb)&&pb<3))return "ATTRACTIVE"; return "FAIR";}
-    private String summary(double growth,double profitability,double cash,String valuation){return String.format("Growth %.0f/100, profitability %.0f/100, cash flow %.0f/100; valuation %s.",growth,profitability,cash,valuation);}
-    private Double round(double v){return Double.isNaN(v)||Double.isInfinite(v)?null:Math.round(v*100.0)/100.0;}
+    private Double sum(Double a, Double b) { return a == null || b == null ? null : a + b; }
+    private Double subtract(Double a, Double b) { return a == null || b == null ? null : a - b; }
+    private Double averageValue(Double a, Double b) { return a == null || b == null ? null : (a + b) / 2.0; }
+    private Double safeRatio(Double numerator, Double denominator) { return numerator == null || denominator == null || denominator == 0 ? null : numerator / denominator; }
+    private Double percentage(Double value) { return value == null ? null : value * 100; }
+    private Double pct(Double a, Double b) { return a == null || b == null || b == 0 ? null : (a / b - 1) * 100; }
+    private Double cagr(Double end, Double start, int years) { return end == null || start == null || end <= 0 || start <= 0 || years <= 0 ? null : (Math.pow(end / start, 1.0 / years) - 1) * 100; }
+    private Double average(Double... values) { double sum=0; int count=0; for(Double v:values) if(v!=null && !v.isNaN() && !v.isInfinite()){sum+=v;count++;} return count==0?null:sum/count; }
+    private Double weightedAvailable(Double... values) { double sum=0,w=0; for(int i=0;i<values.length;i+=2){Double v=values[i], wt=values[i+1]; if(v!=null && !v.isNaN() && !v.isInfinite()){sum+=v*wt;w+=wt;}} return w==0?null:sum/w; }
+    private Double scoreGrowth(Double v){return bucket(v,5,10,15,25);}
+    private Double scoreRoe(Double v){return bucket(v,8,12,18,25);}
+    private Double scoreMargin(Double v){return bucket(v,5,8,12,20);}
+    private Double scoreDebt(Double v){if(v==null)return null; return v<=0.1?100.0:v<=0.25?90.0:v<=0.5?75.0:v<=0.8?50.0:25.0;}
+    private Double scoreCoverage(Double v){return v==null?null:(Double.isInfinite(v)?100.0:bucket(v,2,4,7,10));}
+    private Double scoreNetWorthTrend(Double v){return v==null?null:(v>1000?100.0:v>500?85.0:v>0?70.0:v==0?50.0:25.0);}
+    private Double scoreCashConversion(Double v){return bucket(v,50,80,100,130);}
+    private Double scoreConsistency(int positive,int total){return total<=0?null:Math.min(100, Math.max(25, positive*100.0/total));}
+    private Double scoreCfo(Double v){return v==null?null:(v>1000?100.0:v>500?85.0:v>100?70.0:v>0?50.0:25.0);}
+    private Double scorePe(Double v){if(v==null||v<=0)return null; return v<=15?100.0:v<=20?90.0:v<=30?75.0:v<=40?50.0:25.0;}
+    private Double scorePb(Double v){if(v==null||v<=0)return null; return v<=2?100.0:v<=3?90.0:v<=5?75.0:v<=10?50.0:25.0;}
+    private Double bucket(Double v,double a,double b,double c,double d){if(v==null||v.isNaN()||v.isInfinite())return null; return v<=a?25.0:v<=b?50.0:v<=c?75.0:100.0;}
+    private String valuationLabel(Double pe,Double pb){if((pe!=null&&pe>50)||(pb!=null&&pb>10))return "EXPENSIVE"; if((pe!=null&&pe>30)||(pb!=null&&pb>5))return "RICH"; if((pe!=null&&pe>0&&pe<18)&&(pb!=null&&pb<3))return "ATTRACTIVE"; return "FAIR";}
+    private String summary(Double growth,Double profitability,Double cash,String valuation){return String.format("Growth %s/100, profitability %s/100, cash flow %s/100; valuation %s.",displayScore(growth),displayScore(profitability),displayScore(cash),valuation);}
+    private String displayScore(Double value){return value == null ? "N/A" : String.format("%.0f", value);}
+    private Double round(Double v){return v == null || v.isNaN() || v.isInfinite()?null:Math.round(v*100.0)/100.0;}
     private FundamentalAnalysis unavailable(String note){return FundamentalAnalysis.builder().status("UNAVAILABLE").confidence("UNAVAILABLE").summary("Fundamental analysis is unavailable; technical analysis can continue normally.").dataNote(note).build();}
 }
