@@ -53,6 +53,8 @@ spring:
 # OpenAI API configuration
 # api-key is the file path containing the actual API key text
 openai:
+  # Master switch: when false, the OpenAI key is not read/validated and no OpenAI API calls are made.
+  use-open-api-key: true
   api-key: /Users/y0p03mn/Desktop/OPEN_API_KEY.txt
   model-name: gpt-5
   service-tier: priority

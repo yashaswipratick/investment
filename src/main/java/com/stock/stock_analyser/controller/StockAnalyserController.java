@@ -334,6 +334,7 @@ public class StockAnalyserController {
     @GetMapping(value = "/openai/key-status", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> openAiKeyStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
+        status.put("useOpenApiKey", openAiCommentaryService.isOpenApiKeyUsageEnabled());
         status.put("keyValid", openAiCommentaryService.isApiKeyValid());
         status.put("validationMessage", openAiCommentaryService.getApiKeyValidationMessage());
         status.put("aiCommentaryEnabled", openAiCommentaryService.isApiKeyValid());
