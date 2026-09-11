@@ -68,8 +68,8 @@ public class FundamentalAnalysisService {
 
         FundamentalPeriodData latest = periods.get(periods.size() - 1);
         FundamentalPeriodData previous = periods.get(periods.size() - 2);
-        FundamentalPeriodData threeYearsAgo = findHistoricalPeriod(periods, latest.date(), 3.0);
-        FundamentalPeriodData fiveYearsAgo = findHistoricalPeriod(periods, latest.date(), 5.0);
+        FundamentalPeriodData threeYearsAgo = findClosestHistoricalPeriod(periods, latest.date(), 3.0);
+        FundamentalPeriodData fiveYearsAgo = findClosestHistoricalPeriod(periods, latest.date(), 5.0);
 
         Double netWorth = sum(latest.equity(), latest.reserves());
         Double previousNetWorth = sum(previous.equity(), previous.reserves());
@@ -149,8 +149,8 @@ public class FundamentalAnalysisService {
 
     private static final long HISTORICAL_PERIOD_TOLERANCE_DAYS = 183;
 
-    /** Selects the nearest prior financial period to the target date within a six-month tolerance. */
-    FundamentalPeriodData findHistoricalPeriod(List<FundamentalPeriodData> periods, LocalDate latestDate, double targetYears) {
+    /** Selects the closest financial period to the target date on either side, provided it is strictly earlier than the latest period and within the six-month tolerance. */
+    FundamentalPeriodData findClosestHistoricalPeriod(List<FundamentalPeriodData> periods, LocalDate latestDate, double targetYears) {
         if (periods == null || latestDate == null) return null;
         LocalDate targetDate = latestDate.minusDays(Math.round(targetYears * DAYS_PER_YEAR));
         FundamentalPeriodData best = null;

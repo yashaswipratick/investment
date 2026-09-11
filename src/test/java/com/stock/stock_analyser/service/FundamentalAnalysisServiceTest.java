@@ -40,39 +40,39 @@ class FundamentalAnalysisServiceTest {
     @Test void historicalPeriodRequiresAtLeastTargetHistory() {
         var periods = List.of(period("2024-03-31", 100, 10, 20, 30, 5, 12, 12, 2, 1, 10, 2),
                 period("2025-03-31", 110, 11, 21, 31, 5, 13, 13, 2, 1, 11, 2));
-        assertNull(service.findHistoricalPeriod(periods, LocalDate.of(2025, 3, 31), 3));
+        assertNull(service.findClosestHistoricalPeriod(periods, LocalDate.of(2025, 3, 31), 3));
     }
 
-    @Test void historicalPeriodSelectsClosestPeriodToTargetDate() {
+    @Test void historicalPeriodSelectsClosestPeriodToTargetDateEitherSide() {
         var periods = List.of(period("2021-03-31", 80, 8, 18, 28, 5, 10, 10, 2, 1, 8, 2),
                 period("2022-02-28", 90, 9, 19, 29, 5, 11, 11, 2, 1, 9, 2),
                 period("2022-06-30", 95, 9.5, 19, 29, 5, 11, 11, 2, 1, 9, 2),
                 period("2025-03-31", 120, 12, 22, 32, 5, 14, 14, 2, 1, 12, 2));
-        assertEquals(LocalDate.of(2022, 2, 28), service.findHistoricalPeriod(periods,
+        assertEquals(LocalDate.of(2022, 2, 28), service.findClosestHistoricalPeriod(periods,
                 LocalDate.of(2025, 3, 31), 3).date());
     }
 
-    @Test void historicalPeriodCanSelectPeriodAfterTargetWhenItIsCloser() {
+    @Test void historicalPeriodCanSelectAfterTargetWhenItIsCloser() {
         var periods = List.of(
                 period("2021-03-31", 80, 8, 18, 28, 5, 10, 10, 2, 1, 8, 2),
                 period("2022-02-28", 90, 9, 19, 29, 5, 11, 11, 2, 1, 9, 2),
-                period("2022-06-30", 95, 9.5, 19, 29, 5, 11, 11, 2, 1, 9, 2),
+                period("2022-04-15", 95, 9.5, 19, 29, 5, 11, 11, 2, 1, 9, 2),
                 period("2025-03-31", 120, 12, 22, 32, 5, 14, 14, 2, 1, 12, 2));
-        assertEquals(LocalDate.of(2022, 2, 28), service.findHistoricalPeriod(periods,
+        assertEquals(LocalDate.of(2022, 4, 15), service.findClosestHistoricalPeriod(periods,
                 LocalDate.of(2025, 3, 31), 3).date());
     }
 
-    @Test void historicalPeriodOutsideToleranceIsUnavailable() {
+    @Test void closestHistoricalPeriodOutsideToleranceIsUnavailable() {
         var periods = List.of(
                 period("2020-03-31", 80, 8, 18, 28, 5, 10, 10, 2, 1, 8, 2),
                 period("2025-03-31", 120, 12, 22, 32, 5, 14, 14, 2, 1, 12, 2));
-        assertNull(service.findHistoricalPeriod(periods, LocalDate.of(2025, 3, 31), 3));
+        assertNull(service.findClosestHistoricalPeriod(periods, LocalDate.of(2025, 3, 31), 3));
     }
 
     @Test void cagrUsesActualSelectedFinancialPeriodDate() {
         var start = LocalDate.of(2022, 2, 28);
         var end = LocalDate.of(2025, 3, 31);
-        var selected = service.findHistoricalPeriod(List.of(
+        var selected = service.findClosestHistoricalPeriod(List.of(
                 period("2022-02-28", 100, 10, 20, 30, 5, 12, 12, 2, 1, 10, 2),
                 period("2022-06-30", 110, 11, 21, 31, 5, 13, 13, 2, 1, 11, 2),
                 period("2025-03-31", 150, 15, 25, 35, 5, 17, 17, 2, 1, 15, 2)), end, 3);
