@@ -37,7 +37,7 @@ public class FundamentalWorkbookIndex {
             index = Collections.unmodifiableMap(discovery.index());
             conflicts = Collections.unmodifiableSet(discovery.conflicts());
             log.info("Discovered {} fundamental workbooks and indexed {} symbols in {}",
-                    discovery.workbookCount(), index.size(), directory);
+                    discovery.discoveredWorkbookCount(), discovery.indexedSymbolCount(), directory);
             if (!conflicts.isEmpty()) log.error("Duplicate fundamental workbook symbols detected: {}", conflicts);
             if (!discovery.invalidFiles().isEmpty()) log.warn("Ignored {} invalid/non-canonical fundamental workbook files in {}", discovery.invalidFiles().size(), directory);
         } catch (IOException e) {
@@ -65,6 +65,7 @@ public class FundamentalWorkbookIndex {
         Map<String, Path> result = new HashMap<>();
         Set<String> conflicts = new HashSet<>();
         List<Path> invalid = new ArrayList<>();
+        int discoveredWorkbookCount = 0;
         String ext = extension == null || extension.isBlank() ? ".xlsx" : extension.toLowerCase(Locale.ROOT);
         for (Path file : files == null ? List.<Path>of() : files) {
             if (file == null) continue;
@@ -72,13 +73,15 @@ public class FundamentalWorkbookIndex {
             if (!name.toLowerCase(Locale.ROOT).endsWith(ext)) { invalid.add(file); continue; }
             String stem = name.substring(0, name.length() - ext.length());
             if (stem.isBlank() || !stem.matches("[A-Za-z0-9._-]+")) { invalid.add(file); continue; }
+            discoveredWorkbookCount++;
             String symbol = stem.toUpperCase(Locale.ROOT);
             Path normalized = file.toAbsolutePath().normalize();
             Path existing = result.putIfAbsent(symbol, normalized);
             if (existing != null && !existing.equals(normalized)) { conflicts.add(symbol); result.remove(symbol); }
         }
-        return new Discovery(result, conflicts, invalid, result.size() + conflicts.size());
+        return new Discovery(result, conflicts, invalid, discoveredWorkbookCount, result.size());
     }
 
-    record Discovery(Map<String, Path> index, Set<String> conflicts, List<Path> invalidFiles, int workbookCount) {}
+    record Discovery(Map<String, Path> index, Set<String> conflicts, List<Path> invalidFiles,
+                     int discoveredWorkbookCount, int indexedSymbolCount) {}
 }

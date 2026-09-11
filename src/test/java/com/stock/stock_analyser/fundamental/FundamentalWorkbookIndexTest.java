@@ -31,8 +31,30 @@ class FundamentalWorkbookIndexTest {
     @Test void detectsDuplicateSymbolsWithoutPickingOne() {
         FundamentalWorkbookIndex.Discovery discovery = FundamentalWorkbookIndex.buildIndex(
                 List.of(Path.of("/tmp/BEL.xlsx"), Path.of("/tmp/bel.xlsx")), ".xlsx");
+        assertEquals(2, discovery.discoveredWorkbookCount());
+        assertEquals(0, discovery.indexedSymbolCount());
+        assertEquals(1, discovery.conflicts().size());
         assertTrue(discovery.conflicts().contains("BEL"));
         assertFalse(discovery.index().containsKey("BEL"));
+    }
+
+    @Test void countsUniqueValidWorkbooks() {
+        FundamentalWorkbookIndex.Discovery discovery = FundamentalWorkbookIndex.buildIndex(
+                List.of(Path.of("MUNJALAU.xlsx"), Path.of("BEL.xlsx"), Path.of("HAL.xlsx")), ".xlsx");
+        assertEquals(3, discovery.discoveredWorkbookCount());
+        assertEquals(3, discovery.indexedSymbolCount());
+        assertEquals(0, discovery.conflicts().size());
+        assertEquals(0, discovery.invalidFiles().size());
+    }
+
+    @Test void countsOnlyAcceptedWorkbookFiles() {
+        FundamentalWorkbookIndex.Discovery discovery = FundamentalWorkbookIndex.buildIndex(
+                List.of(Path.of("TRENT.csv"), Path.of("README.txt"), Path.of("TRENT.xlsx")), ".xlsx");
+        // discoveredWorkbookCount counts accepted canonical .xlsx files; rejected files are invalidFiles.
+        assertEquals(1, discovery.discoveredWorkbookCount());
+        assertEquals(1, discovery.indexedSymbolCount());
+        assertEquals(0, discovery.conflicts().size());
+        assertEquals(2, discovery.invalidFiles().size());
     }
 
     @Test void indexesFiveHundredCanonicalWorkbooks() throws Exception {
