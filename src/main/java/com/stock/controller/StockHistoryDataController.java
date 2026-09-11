@@ -3,6 +3,7 @@ package com.stock.controller;
 import com.stock.dto.StockHistory;
 import com.stock.dto.StockHistoryDetails;
 import com.stock.dto.StockHistoryRequest;
+import com.stock.dto.StockHistoryCsvRequest;
 import com.stock.dto.StockInfoDetails;
 import com.stock.service.StockDetailsIntegrator;
 import com.stock.service.StockHistoryDataIntegrator;
@@ -24,6 +25,9 @@ public class StockHistoryDataController {
 
     @Autowired
     private StockHistoryDataIntegrator integrator;
+
+    @Autowired
+    private com.stock.service.StockHistoryDataService stockHistoryDataService;
 
     @PostMapping(value = "/stockHistoryDetail", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Mono<StockHistory>>> get(@RequestBody StockHistoryRequest stockHistory) throws Exception {
@@ -67,5 +71,42 @@ public class StockHistoryDataController {
     public Mono<ResponseEntity<Mono<StockHistory>>> fetchStockHistoryFromNextApi(
             @RequestBody StockHistoryRequest stockHistoryRequest) {
         return Mono.justOrEmpty(ResponseEntity.ok(integrator.fetchAndSaveFromNextApi(stockHistoryRequest)));
+    }
+
+    @PostMapping(value = "/stockHistoryCSV", produces = "text/csv")
+    public Mono<ResponseEntity<byte[]>> downloadStockHistoryCsv(
+            @RequestBody StockHistoryCsvRequest request) {
+        if (request == null || request.getStockName() == null || request.getStockName().isBlank()) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+
+        String stockName = request.getStockName().trim().toUpperCase(java.util.Locale.ROOT);
+        return stockHistoryDataService.getCsv(stockName)
+                .map(csv -> ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType("text/csv"))
+                        .header("Content-Disposition", "attachment; filename=\"" + stockName + "_stock_history.csv\"")
+                        .body(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .onErrorResume(java.util.NoSuchElementException.class,
+                        error -> Mono.just(ResponseEntity.notFound().build()))
+                .onErrorResume(IllegalArgumentException.class,
+                        error -> Mono.just(ResponseEntity.badRequest().build()));
+    }
+
+    @PostMapping(value = "/stockHistoryCSV/bulk", produces = "application/zip")
+    public Mono<ResponseEntity<byte[]>> downloadStockHistoryCsvBulk(
+            @RequestBody StockHistoryCsvRequest request) {
+        if (request == null || request.getStockNames() == null || request.getStockNames().isBlank()) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+
+        return stockHistoryDataService.getCsvZip(request.getStockNames())
+                .map(zip -> ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType("application/zip"))
+                        .header("Content-Disposition", "attachment; filename=\"stock_history_csv.zip\"")
+                        .body(zip))
+                .onErrorResume(java.util.NoSuchElementException.class,
+                        error -> Mono.just(ResponseEntity.notFound().build()))
+                .onErrorResume(IllegalArgumentException.class,
+                        error -> Mono.just(ResponseEntity.badRequest().build()));
     }
 }
