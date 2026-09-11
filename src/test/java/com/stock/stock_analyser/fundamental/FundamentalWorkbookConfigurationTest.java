@@ -13,6 +13,8 @@ class FundamentalWorkbookConfigurationTest {
         config.setWorkbooks(Map.of("MUNJALAU", "Munjal Auto Inds.xlsx"));
         assertEquals("/tmp/test-fundamentals", config.getDataDirectory());
         assertEquals("Munjal Auto Inds.xlsx", config.getWorkbookForSymbol(" munjalau "));
-        assertNull(config.getWorkbookForSymbol("UNKNOWN"));
+        assertEquals("UNKNOWN.xlsx", config.getWorkbookForSymbol("UNKNOWN"));
+        assertFalse(config.hasExplicitWorkbookMapping("UNKNOWN"));
+        assertTrue(config.hasExplicitWorkbookMapping("MUNJALAU"));
     }
 }

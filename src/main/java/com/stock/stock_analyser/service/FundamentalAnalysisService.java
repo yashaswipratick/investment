@@ -26,7 +26,7 @@ import java.util.*;
 public class FundamentalAnalysisService {
 
     private static final double DAYS_PER_YEAR = 365.2425;
-    private final Path dataDirectory;
+    private final String dataDirectoryValue;
     private final FundamentalDataParser parser;
     private final FundamentalWorkbookConfiguration workbookConfiguration;
 
@@ -34,7 +34,7 @@ public class FundamentalAnalysisService {
     public FundamentalAnalysisService(FundamentalWorkbookConfiguration workbookConfiguration,
                                       FundamentalDataParser parser) {
         this.workbookConfiguration = workbookConfiguration;
-        this.dataDirectory = Paths.get(workbookConfiguration.getDataDirectory());
+        this.dataDirectoryValue = workbookConfiguration.getDataDirectory();
         this.parser = parser;
     }
 
@@ -42,27 +42,39 @@ public class FundamentalAnalysisService {
     FundamentalAnalysisService(String dataDirectory, FundamentalDataParser parser) {
         this.workbookConfiguration = new FundamentalWorkbookConfiguration();
         this.workbookConfiguration.setDataDirectory(dataDirectory);
-        this.dataDirectory = Paths.get(dataDirectory);
+        this.dataDirectoryValue = dataDirectory;
         this.parser = parser;
     }
 
     @PostConstruct
     void validateConfiguration() {
-        if (dataDirectory == null || !Files.isDirectory(dataDirectory)) {
+        if (dataDirectoryValue == null || dataDirectoryValue.isBlank()) {
+            log.warn("Fundamental data directory is not configured.");
+            return;
+        }
+        Path dataDirectory = Paths.get(dataDirectoryValue).normalize();
+        if (!Files.isDirectory(dataDirectory)) {
             log.warn("Fundamental data directory is unavailable: {}", dataDirectory);
         }
         if (workbookConfiguration.getWorkbooks().isEmpty()) {
-            log.warn("No fundamental workbook mappings are configured.");
+            log.info("No explicit fundamental workbook mappings are configured; canonical SYMBOL.xlsx resolution remains enabled.");
         }
     }
 
     public FundamentalAnalysis analyse(String symbol) {
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
         String filename = workbookConfiguration.getWorkbookForSymbol(normalized);
-        if (filename == null || filename.isBlank()) return unavailable("No configured fundamental workbook for " + normalized + ".");
+        if (filename == null || filename.isBlank()) return unavailable("No fundamental workbook can be resolved for " + normalized + ".");
+        if (dataDirectoryValue == null || dataDirectoryValue.isBlank()) return unavailable("Fundamental data directory is not configured.");
+        Path dataDirectory;
+        try {
+            dataDirectory = Paths.get(dataDirectoryValue).normalize();
+        } catch (RuntimeException e) {
+            return unavailable("Invalid fundamental data directory configuration.");
+        }
         if (!Files.isDirectory(dataDirectory)) return unavailable("Fundamental data directory is unavailable: " + dataDirectory);
         Path file = dataDirectory.resolve(filename).normalize();
-        if (!file.startsWith(dataDirectory.normalize())) return unavailable("Invalid workbook path configuration for " + normalized + ".");
+        if (!file.startsWith(dataDirectory)) return unavailable("Invalid workbook path configuration for " + normalized + ".");
         if (!Files.isRegularFile(file)) return unavailable("Fundamental workbook not found for " + normalized + ": " + filename);
         try (InputStream in = Files.newInputStream(file); Workbook workbook = WorkbookFactory.create(in)) {
             return analyse(parser.parse(workbook, normalized));

@@ -270,10 +270,16 @@ public class InvestmentSignalEngine {
             if (!(stopLoss > 0 && stopLoss < entryLow)) stopLoss = entryLow * 0.94;
 
             double riskPerUnit = entryHigh - stopLoss;
-            double target = t.getResistanceLevel() != null && t.getResistanceLevel() > entryHigh
+            // Do not let a nearby resistance level create a sub-2R BUY setup.
+            // Resistance is usable only when it preserves the Marcus minimum
+            // reward/risk quality floor; otherwise the deterministic 2R target
+            // remains the safer fallback.
+            double minimumTarget = entryHigh + riskPerUnit * 2.0;
+            double target = t.getResistanceLevel() != null && t.getResistanceLevel() >= minimumTarget
                     ? t.getResistanceLevel()
-                    : entryHigh + riskPerUnit * 2.0;
-            if (t.getFiftyTwoWeekHigh() != null && t.getFiftyTwoWeekHigh() > target && score > 70) target = t.getFiftyTwoWeekHigh();
+                    : minimumTarget;
+            if (t.getFiftyTwoWeekHigh() != null && t.getFiftyTwoWeekHigh() >= minimumTarget
+                    && t.getFiftyTwoWeekHigh() > target && score > 70) target = t.getFiftyTwoWeekHigh();
             if (!(target > entryHigh)) target = entryHigh + riskPerUnit * 2.0;
 
             // Single documented convention: R:R uses the conservative/worst-case
