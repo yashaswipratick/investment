@@ -5,7 +5,9 @@ import com.stock.stock_analyser.fundamental.FundamentalDataParser;
 import com.stock.stock_analyser.fundamental.FundamentalDataSet;
 import com.stock.stock_analyser.fundamental.FundamentalMarketSnapshot;
 import com.stock.stock_analyser.fundamental.FundamentalPeriodData;
-import com.stock.stock_analyser.fundamental.FundamentalWorkbookConfiguration;
+import com.stock.stock_analyser.fundamental.FundamentalDataConfiguration;
+import com.stock.stock_analyser.fundamental.FundamentalWorkbookIndex;
+import com.stock.stock_analyser.fundamental.FundamentalWorkbookResolver;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -28,22 +30,26 @@ public class FundamentalAnalysisService {
     private static final double DAYS_PER_YEAR = 365.2425;
     private final String dataDirectoryValue;
     private final FundamentalDataParser parser;
-    private final FundamentalWorkbookConfiguration workbookConfiguration;
+    private final FundamentalWorkbookResolver workbookResolver;
 
     @Autowired
-    public FundamentalAnalysisService(FundamentalWorkbookConfiguration workbookConfiguration,
-                                      FundamentalDataParser parser) {
-        this.workbookConfiguration = workbookConfiguration;
+    public FundamentalAnalysisService(FundamentalDataConfiguration workbookConfiguration,
+                                      FundamentalDataParser parser,
+                                      FundamentalWorkbookResolver workbookResolver) {
         this.dataDirectoryValue = workbookConfiguration.getDataDirectory();
         this.parser = parser;
+        this.workbookResolver = workbookResolver;
     }
 
     /** Test-friendly constructor: pure analysis tests do not need filesystem configuration. */
     FundamentalAnalysisService(String dataDirectory, FundamentalDataParser parser) {
-        this.workbookConfiguration = new FundamentalWorkbookConfiguration();
-        this.workbookConfiguration.setDataDirectory(dataDirectory);
         this.dataDirectoryValue = dataDirectory;
         this.parser = parser;
+        FundamentalDataConfiguration configuration = new FundamentalDataConfiguration();
+        configuration.setDataDirectory(dataDirectory);
+        FundamentalWorkbookIndex index = new FundamentalWorkbookIndex(configuration);
+        index.refresh();
+        this.workbookResolver = new FundamentalWorkbookResolver(index);
     }
 
     @PostConstruct
@@ -56,15 +62,10 @@ public class FundamentalAnalysisService {
         if (!Files.isDirectory(dataDirectory)) {
             log.warn("Fundamental data directory is unavailable: {}", dataDirectory);
         }
-        if (workbookConfiguration.getWorkbooks().isEmpty()) {
-            log.info("No explicit fundamental workbook mappings are configured; canonical SYMBOL.xlsx resolution remains enabled.");
-        }
     }
 
     public FundamentalAnalysis analyse(String symbol) {
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
-        String filename = workbookConfiguration.getWorkbookForSymbol(normalized);
-        if (filename == null || filename.isBlank()) return unavailable("No fundamental workbook can be resolved for " + normalized + ".");
         if (dataDirectoryValue == null || dataDirectoryValue.isBlank()) return unavailable("Fundamental data directory is not configured.");
         Path dataDirectory;
         try {
@@ -73,9 +74,10 @@ public class FundamentalAnalysisService {
             return unavailable("Invalid fundamental data directory configuration.");
         }
         if (!Files.isDirectory(dataDirectory)) return unavailable("Fundamental data directory is unavailable: " + dataDirectory);
-        Path file = dataDirectory.resolve(filename).normalize();
-        if (!file.startsWith(dataDirectory)) return unavailable("Invalid workbook path configuration for " + normalized + ".");
-        if (!Files.isRegularFile(file)) return unavailable("Fundamental workbook not found for " + normalized + ": " + filename);
+        Optional<Path> resolved = workbookResolver.resolve(normalized);
+        if (resolved.isEmpty()) return unavailable("Fundamental workbook not found or invalid for " + normalized + ".");
+        Path file = resolved.get();
+        if (!file.startsWith(dataDirectory)) return unavailable("Invalid workbook path for " + normalized + ".");
         try (InputStream in = Files.newInputStream(file); Workbook workbook = WorkbookFactory.create(in)) {
             return analyse(parser.parse(workbook, normalized));
         } catch (Exception e) {
