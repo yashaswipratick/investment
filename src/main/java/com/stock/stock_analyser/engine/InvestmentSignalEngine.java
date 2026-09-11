@@ -251,77 +251,64 @@ public class InvestmentSignalEngine {
             }
         }
 
-        // ── Entry zone ────────────────────────────────────────────────────────
-        // A practical entry zone is a TIGHT band near the current price —
-        // not the entire distance from support to current price.
-        //
-        // Logic:
-        //   entryHigh = current price (fair to enter at market)
-        //   entryLow  = max(current price - 4%, nearest meaningful support)
-        //               → capped so spread never exceeds 5% of price (max ~₹100 on ₹2000 stock)
-        //
-        // "Nearest meaningful support" = the closer of:
-        //   a) 20-day SMA (dynamic support)
-        //   b) Lower Bollinger Band (volatility-adjusted support)
-        //   c) 4% below current price (hard cap)
-        double maxSpreadPct = 0.04; // max 4% spread on entry zone
-        double candidateLow = price * (1 - maxSpreadPct);
+        // ── Decision-driven trade setup ──────────────────────────────────────
+        // The hard-gated action above is authoritative. Trade fields are only
+        // populated when they are meaningful for that action; they never change it.
+        if ("BUY".equals(action)) {
+            double candidateLow = price * 0.96;
+            if (t.getSma20() != null && t.getSma20() > candidateLow && t.getSma20() < price) candidateLow = t.getSma20();
+            if (t.getBbMiddle() != null && t.getBbMiddle() > candidateLow && t.getBbMiddle() < price) candidateLow = t.getBbMiddle();
 
-        // Use the closer of SMA20 and BB lower as support, only if it's within the 4% band
-        if (t.getSma20() != null && t.getSma20() > candidateLow && t.getSma20() < price) {
-            candidateLow = t.getSma20();
-        }
-        if (t.getBbMiddle() != null && t.getBbMiddle() > candidateLow && t.getBbMiddle() < price) {
-            candidateLow = t.getBbMiddle(); // prefer mid-band as near-term support
-        }
+            double entryLow = round(candidateLow);
+            double entryHigh = round(price * 1.005);
+            if (entryLow >= entryHigh) entryLow = round(entryHigh * 0.99);
 
-        double entryLow  = round(candidateLow);
-        double entryHigh = round(price * 1.005); // allow up to 0.5% above current (slippage)
+            // Technical invalidation: nearest defensible support, without an
+            // artificial risk cap that could move the stop above the entry zone.
+            double bbLower = t.getBbLower() != null && t.getBbLower() > 0 ? t.getBbLower() : entryLow * 0.94;
+            double stopLoss = Math.min(bbLower, entryLow * 0.94);
+            if (!(stopLoss > 0 && stopLoss < entryLow)) stopLoss = entryLow * 0.94;
 
-        // Ensure spread never exceeds 5% regardless (safety cap)
-        if ((entryHigh - entryLow) / price > 0.05) {
-            entryLow = round(entryHigh * (1 - 0.04));
-        }
+            double riskPerUnit = entryHigh - stopLoss;
+            double target = t.getResistanceLevel() != null && t.getResistanceLevel() > entryHigh
+                    ? t.getResistanceLevel()
+                    : entryHigh + riskPerUnit * 2.0;
+            if (t.getFiftyTwoWeekHigh() != null && t.getFiftyTwoWeekHigh() > target && score > 70) target = t.getFiftyTwoWeekHigh();
+            if (!(target > entryHigh)) target = entryHigh + riskPerUnit * 2.0;
 
-        // ── Stop-loss ─────────────────────────────────────────────────────────
-        // Place at the LOWER of:
-        //   a) Lower Bollinger Band (statistical support)
-        //   b) 6% below entry low (max acceptable loss from entry)
-        // Never more than 10% below current price.
-        double bbLower  = t.getBbLower() != null ? t.getBbLower() : price * 0.94;
-        double stopLoss = Math.min(bbLower, entryLow * 0.94);
-        stopLoss = Math.max(stopLoss, price * 0.90); // hard cap: never risk more than 10%
+            // Single documented convention: R:R uses the conservative/worst-case
+            // long entry (entryHigh): risk = entryHigh - stop, reward = target - entryHigh.
+            double risk = entryHigh - stopLoss;
+            double reward = target - entryHigh;
+            Double rr = risk > 0 && reward > 0 ? reward / risk : null;
+            double upside = reward / entryHigh * 100;
+            double downside = risk / entryHigh * 100;
 
-        // ── Target price ─────────────────────────────────────────────────────
-        // Use resistance if meaningful; else use 1.5 * risk above entry
-        double riskPerUnit = entryHigh - stopLoss;
-        double target = t.getResistanceLevel() != null && t.getResistanceLevel() > entryHigh
-                        ? t.getResistanceLevel()
-                        : entryHigh + (riskPerUnit * 2.0); // 2:1 R/R minimum
-
-        // Upgrade target if near 52-week high and score is high
-        if (t.getFiftyTwoWeekHigh() != null && t.getFiftyTwoWeekHigh() > target && score > 70) {
-            target = t.getFiftyTwoWeekHigh();
+            return InvestmentRecommendation.builder()
+                    .action(action).confidenceScore(score)
+                    .entryPriceLow(entryLow).entryPriceHigh(entryHigh)
+                    .targetPrice(round(target)).stopLossPrice(round(stopLoss))
+                    .potentialUpsidePct(round(upside)).potentialDownsidePct(round(downside))
+                    .riskRewardRatio(rr == null || !Double.isFinite(rr) ? null : rr)
+                    .rationale(String.join(" | ", reasons)).timeframe(timeframe).build();
         }
 
-        // ── Potential pct ─────────────────────────────────────────────────────
-        double upside   = entryHigh > 0 ? (target - entryHigh) / entryHigh * 100  : 0;
-        double downside = entryLow  > 0 ? (entryLow - stopLoss) / entryLow * 100  : 0;
-        double rr = downside > 0 ? upside / downside : 0;
+        // WAIT can expose a trigger zone, but must not look like an active trade.
+        if ("WAIT_FOR_CONFIRMATION".equals(action)) {
+            double entryLow = round(price);
+            double entryHigh = round(price * 1.005);
+            return InvestmentRecommendation.builder()
+                    .action(action).confidenceScore(score)
+                    .entryPriceLow(entryLow).entryPriceHigh(entryHigh)
+                    .rationale(String.join(" | ", reasons) + " | Wait for technical confirmation before entering.")
+                    .timeframe(timeframe).build();
+        }
 
+        // HOLD / INSUFFICIENT_DATA / bearish states have no fabricated long setup.
         return InvestmentRecommendation.builder()
-                .action(action)
-                .confidenceScore(score)
-                .entryPriceLow(round(entryLow))
-                .entryPriceHigh(round(entryHigh))
-                .targetPrice(round(target))
-                .stopLossPrice(round(stopLoss))
-                .potentialUpsidePct(round(upside))
-                .potentialDownsidePct(round(downside))
-                .riskRewardRatio(round(rr))
+                .action(action).confidenceScore(score)
                 .rationale(String.join(" | ", reasons))
-                .timeframe(timeframe)
-                .build();
+                .timeframe(timeframe).build();
     }
 
     private Double round(double v) {

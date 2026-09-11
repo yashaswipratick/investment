@@ -20,6 +20,12 @@ public class StockAnalysisResult {
     /** Analysis period: 6M | 1Y | 2Y | 3Y */
     private String periodLabel;
     private LocalDate analysisDate;
+    /** Execution date in the NSE analysis timezone; retained separately for clarity. */
+    private LocalDate analysisExecutionDate;
+    /** Latest market candle date used/available for this analysis. */
+    private LocalDate marketDataLatestDate;
+    /** Latest annual fundamental reporting period available to the analyzer. */
+    private LocalDate fundamentalLatestPeriod;
     private int totalDataPoints;         // Total candles used for analysis
 
     // ── Data Window Info ────────────────────────────────────────────────────

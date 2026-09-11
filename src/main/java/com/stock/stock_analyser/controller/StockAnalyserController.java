@@ -147,6 +147,9 @@ public class StockAnalyserController {
                                     m.put("symbol",          e.getKey().getSymbol());
                                     m.put("periodLabel",     e.getKey().getPeriodLabel());
                                     m.put("analysisDate",    e.getKey().getAnalysisDate());
+                                    m.put("analysisExecutionDate", e.getAnalysisExecutionDate());
+                                    m.put("marketDataLatestDate", e.getMarketDataLatestDate());
+                                    m.put("fundamentalLatestPeriod", e.getFundamentalLatestPeriod());
                                     m.put("windowStatus",    e.getWindowStatus());
                                     m.put("windowMessage",   e.getWindowMessage());
                                     m.put("totalDataPoints", e.getTotalDataPoints());
@@ -224,6 +227,9 @@ public class StockAnalyserController {
                     row.put("symbol",      entity.getKey().getSymbol());
                     row.put("periodLabel", entity.getKey().getPeriodLabel());
                     row.put("analysisDate", entity.getKey().getAnalysisDate());
+                    row.put("analysisExecutionDate", entity.getAnalysisExecutionDate());
+                    row.put("marketDataLatestDate", entity.getMarketDataLatestDate());
+                    row.put("fundamentalLatestPeriod", entity.getFundamentalLatestPeriod());
                     row.put("windowStatus", entity.getWindowStatus());
 
                     try {

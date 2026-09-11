@@ -2,6 +2,7 @@ package com.stock.stock_analyser.service;
 
 import com.stock.stock_analyser.fundamental.FundamentalDataParser;
 import com.stock.stock_analyser.fundamental.FundamentalDataSet;
+import com.stock.stock_analyser.fundamental.FundamentalWorkbookRowMapping;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,21 @@ class FundamentalDataParserTest {
 
 
     @Test
+    void missingVerifiedRowLabelMakesOnlyThatMetricUnavailable() throws Exception {
+        try (var workbook = new XSSFWorkbook()) {
+            var sheet = workbook.createSheet("Data Sheet");
+            put(sheet, 15, 1, 45647);
+            put(sheet, 16, 1, 100.0);
+            sheet.getRow(16).getCell(0).setCellValue("Unexpected label");
+            put(sheet, 29, 1, 10.0);
+            FundamentalDataSet result = new FundamentalDataParser().parse(workbook, "TEST");
+            assertNull(result.annualPeriods().get(0).sales());
+            assertNotNull(result.annualPeriods().get(0).profit());
+            assertFalse(result.dataQualityNotes().isEmpty());
+        }
+    }
+
+    @Test
     void promoterAndPledgeAreUnavailableWhenSourceHasNoVerifiedFields() throws Exception {
         try (var workbook = new XSSFWorkbook()) {
             var sheet = workbook.createSheet("Data Sheet");
@@ -65,6 +81,8 @@ class FundamentalDataParserTest {
     private void put(org.apache.poi.ss.usermodel.Sheet sheet, int rowIndex, int column, double value) {
         Row row = sheet.getRow(rowIndex);
         if (row == null) row = sheet.createRow(rowIndex);
+        String[] labels = FundamentalWorkbookRowMapping.EXPECTED_LABELS.get(rowIndex);
+        if (labels != null) row.createCell(0).setCellValue(labels[0]);
         row.createCell(column).setCellValue(value);
     }
 }

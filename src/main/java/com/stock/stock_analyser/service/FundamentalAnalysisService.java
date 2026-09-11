@@ -5,10 +5,11 @@ import com.stock.stock_analyser.fundamental.FundamentalDataParser;
 import com.stock.stock_analyser.fundamental.FundamentalDataSet;
 import com.stock.stock_analyser.fundamental.FundamentalMarketSnapshot;
 import com.stock.stock_analyser.fundamental.FundamentalPeriodData;
+import com.stock.stock_analyser.fundamental.FundamentalWorkbookConfiguration;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 
 @Slf4j
@@ -24,35 +26,44 @@ import java.util.*;
 public class FundamentalAnalysisService {
 
     private static final double DAYS_PER_YEAR = 365.2425;
-    private static final Map<String, String> WORKBOOKS = Map.ofEntries(
-            Map.entry("ABB", "ABB India.xlsx"), Map.entry("APOLLO", "Apollo Hospitals.xlsx"),
-            Map.entry("BEL", "Bharat Electron.xlsx"), Map.entry("BHARTIARTL", "Bharti Airtel.xlsx"),
-            Map.entry("COFORGE", "Coforge.xlsx"), Map.entry("CUMMINSIND", "Cummins India.xlsx"),
-            Map.entry("FINEORG", "Fine Organic.xlsx"), Map.entry("HDFCBANK", "HDFC Bank.xlsx"),
-            Map.entry("HAL", "Hindustan Aeronaut.xlsx"), Map.entry("ICICIBANK", "ICICI Bank.xlsx"),
-            Map.entry("INGERRAND", "Ingersoll-Rand India.xlsx"), Map.entry("LT", "Larsen & Toubro.xlsx"),
-            Map.entry("LAURUSLABS", "Laurus Labs.xlsx"), Map.entry("MUNJALAU", "Munjal Auto Inds.xlsx"),
-            Map.entry("ONGC", "ONGC.xlsx"), Map.entry("OIL", "Oil India.xlsx"),
-            Map.entry("PERSISTENT", "Persistent Systems.xlsx"), Map.entry("RELIANCE", "Reliance Industries.xlsx"),
-            Map.entry("SBIN", "SBI.xlsx"), Map.entry("SIEMENS", "Siemens.xlsx"),
-            Map.entry("SOLARINDS", "Solar Industries.xlsx"), Map.entry("SUNPHARMA", "Sun Pharma.xlsx"));
-
     private final Path dataDirectory;
     private final FundamentalDataParser parser;
+    private final FundamentalWorkbookConfiguration workbookConfiguration;
 
-    public FundamentalAnalysisService(
-            @Value("${fundamental.data-directory:${user.home}/Downloads/stock-fundamental-data}") String dataDirectory,
-            FundamentalDataParser parser) {
+    @Autowired
+    public FundamentalAnalysisService(FundamentalWorkbookConfiguration workbookConfiguration,
+                                      FundamentalDataParser parser) {
+        this.workbookConfiguration = workbookConfiguration;
+        this.dataDirectory = Paths.get(workbookConfiguration.getDataDirectory());
+        this.parser = parser;
+    }
+
+    /** Test-friendly constructor: pure analysis tests do not need filesystem configuration. */
+    FundamentalAnalysisService(String dataDirectory, FundamentalDataParser parser) {
+        this.workbookConfiguration = new FundamentalWorkbookConfiguration();
+        this.workbookConfiguration.setDataDirectory(dataDirectory);
         this.dataDirectory = Paths.get(dataDirectory);
         this.parser = parser;
     }
 
+    @PostConstruct
+    void validateConfiguration() {
+        if (dataDirectory == null || !Files.isDirectory(dataDirectory)) {
+            log.warn("Fundamental data directory is unavailable: {}", dataDirectory);
+        }
+        if (workbookConfiguration.getWorkbooks().isEmpty()) {
+            log.warn("No fundamental workbook mappings are configured.");
+        }
+    }
+
     public FundamentalAnalysis analyse(String symbol) {
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
-        String filename = WORKBOOKS.get(normalized);
-        if (filename == null) return unavailable("No configured fundamental workbook for " + normalized + ".");
-        Path file = dataDirectory.resolve(filename);
-        if (!Files.isRegularFile(file)) return unavailable("Fundamental workbook not found: " + file);
+        String filename = workbookConfiguration.getWorkbookForSymbol(normalized);
+        if (filename == null || filename.isBlank()) return unavailable("No configured fundamental workbook for " + normalized + ".");
+        if (!Files.isDirectory(dataDirectory)) return unavailable("Fundamental data directory is unavailable: " + dataDirectory);
+        Path file = dataDirectory.resolve(filename).normalize();
+        if (!file.startsWith(dataDirectory.normalize())) return unavailable("Invalid workbook path configuration for " + normalized + ".");
+        if (!Files.isRegularFile(file)) return unavailable("Fundamental workbook not found for " + normalized + ": " + filename);
         try (InputStream in = Files.newInputStream(file); Workbook workbook = WorkbookFactory.create(in)) {
             return analyse(parser.parse(workbook, normalized));
         } catch (Exception e) {
@@ -123,6 +134,9 @@ public class FundamentalAnalysisService {
         Double overall = weightedAvailable(growth, 25.0, profitability, 20.0, health, 15.0, cash, 15.0, consistency, 10.0, valuation, 15.0);
 
         String periodNote = "Derived from the configured annual workbook; latest period " + latest.date() + ". Promoter holding and promoter pledge are unavailable because verified workbook mapping exposes no promoter/pledge fields; they are not inferred or defaulted to zero. ROCE uses Operating Profit / (Equity + Reserves + Borrowings) and the configured workbook maps Equity and Reserves to the balance-sheet rows used by this calculation.";
+        if (data.dataQualityNotes() != null && !data.dataQualityNotes().isEmpty()) {
+            periodNote += " Data-quality warnings: " + String.join("; ", data.dataQualityNotes()) + ".";
+        }
         if (threeYearsAgo != null) periodNote += " Revenue CAGR 3Y uses " + threeYearsAgo.date() + " to " + latest.date() + ".";
         if (fiveYearsAgo != null) periodNote += " Revenue CAGR 5Y uses " + fiveYearsAgo.date() + " to " + latest.date() + ".";
 

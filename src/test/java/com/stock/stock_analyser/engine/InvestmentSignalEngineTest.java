@@ -15,4 +15,21 @@ class InvestmentSignalEngineTest {
     @Test void buyRequiresBothHardGates(){assertEquals("BUY",engine.recommend(technical(),tech("PASS"),fund("PASS")).getAction()); assertNotEquals("BUY",engine.recommend(technical(),tech("PASS"),fund("FAIL")).getAction()); assertNotEquals("BUY",engine.recommend(technical(),tech("PASS"),fund("UNAVAILABLE")).getAction()); assertNotEquals("BUY",engine.recommend(technical(),tech("FAIL"),fund("PASS")).getAction()); assertNotEquals("BUY",engine.recommend(technical(),tech("FAIL"),fund("FAIL")).getAction());}
     @Test void unavailableFundamentalsProduceInsufficientData(){assertEquals("INSUFFICIENT_DATA",engine.recommend(technical(),tech("PASS"),fund("UNAVAILABLE")).getAction());}
     @Test void failedTechnicalGateProducesWaitForConfirmation(){assertEquals("WAIT_FOR_CONFIRMATION",engine.recommend(technical(),tech("FAIL"),fund("PASS")).getAction());}
+    @Test void buyTradeSetupHasConsistentLongRelationshipsAndMath(){
+        InvestmentRecommendation r=engine.recommend(technical(),tech("PASS"),fund("PASS"));
+        assertEquals("BUY",r.getAction());
+        assertTrue(r.getStopLossPrice() < r.getEntryPriceLow());
+        assertTrue(r.getEntryPriceLow() < r.getEntryPriceHigh());
+        assertTrue(r.getTargetPrice() > r.getEntryPriceHigh());
+        double risk=r.getEntryPriceHigh()-r.getStopLossPrice();
+        double reward=r.getTargetPrice()-r.getEntryPriceHigh();
+        assertEquals(reward/risk,r.getRiskRewardRatio(),0.000001);
+        assertTrue(risk>0 && reward>0 && Double.isFinite(r.getRiskRewardRatio()));
+    }
+    @Test void nonBuyStatesDoNotCreateActionableLongSetup(){
+        InvestmentRecommendation wait=engine.recommend(technical(),tech("FAIL"),fund("PASS"));
+        assertEquals("WAIT_FOR_CONFIRMATION",wait.getAction()); assertNull(wait.getTargetPrice()); assertNull(wait.getStopLossPrice());
+        InvestmentRecommendation insufficient=engine.recommend(technical(),tech("PASS"),fund("UNAVAILABLE"));
+        assertEquals("INSUFFICIENT_DATA",insufficient.getAction()); assertNull(insufficient.getEntryPriceLow()); assertNull(insufficient.getTargetPrice());
+    }
 }

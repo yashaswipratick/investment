@@ -31,6 +31,15 @@ public class StockAnalysisResultEntity {
     @Column("data_to")
     private LocalDate dataTo;
 
+    @Column("analysis_execution_date")
+    private LocalDate analysisExecutionDate;
+
+    @Column("market_data_latest_date")
+    private LocalDate marketDataLatestDate;
+
+    @Column("fundamental_latest_period")
+    private LocalDate fundamentalLatestPeriod;
+
     @Column("required_from")
     private LocalDate requiredFrom;
 

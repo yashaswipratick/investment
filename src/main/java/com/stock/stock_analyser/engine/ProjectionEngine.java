@@ -152,107 +152,68 @@ public class ProjectionEngine {
 
         String action    = r.getAction() != null ? r.getAction() : "HOLD";
         String trend     = t.getTrendDirection() != null ? t.getTrendDirection() : "SIDEWAYS";
-        Double rsi       = t.getRsi14();
-        Double price     = t.getCurrentPrice();
-        Double sma20     = t.getSma20();
-        Double sma50     = t.getSma50();
-        Double entryLow  = r.getEntryPriceLow();
-        Double entryHigh = r.getEntryPriceHigh();
 
-        boolean inBuyZone    = price != null && entryLow != null && entryHigh != null
-                               && price >= entryLow * 0.98 && price <= entryHigh * 1.05;
-        boolean oversold      = rsi != null && rsi < 32;
-        boolean nearSupport   = t.getSupportLevel() != null && price != null
-                               && price <= t.getSupportLevel() * 1.03;
-
-        String signal;
-        boolean goodTime;
-        String currentSituation;
-        String entryTrigger;
-        String keyLevel;
-        String riskProfile;
-
-        if ("DOWNTREND".equals(trend) && !oversold && !nearSupport) {
-            signal           = "AVOID";
-            goodTime         = false;
-            currentSituation = "Stock is in a confirmed downtrend. Price is below SMA50 and SMA200. "
-                             + "No reversal signal yet.";
-            entryTrigger     = sma20 != null
-                             ? String.format("Wait for daily close above ₹%.2f (20-DMA) with above-average volume", sma20)
-                             : "Wait for trend reversal confirmation";
-            keyLevel         = sma50 != null
-                             ? String.format("₹%.2f (50-DMA) — must reclaim to shift bias", sma50)
-                             : "Watch 50-DMA reclaim";
-            riskProfile      = "CONSERVATIVE";
-
-        } else if ("DOWNTREND".equals(trend) && (oversold || nearSupport)) {
-            signal           = "WAIT_FOR_TRIGGER";
-            goodTime         = false;
-            currentSituation = "Downtrend active but price is near oversold/support — potential bounce. "
-                             + "Do not enter without confirmation.";
-            entryTrigger     = sma20 != null
-                             ? String.format("Strong bullish daily candle closing above ₹%.2f with volume spike", sma20)
-                             : "Bullish reversal candle above recent high with volume";
-            keyLevel         = t.getSupportLevel() != null
-                             ? String.format("₹%.2f (key support) — break below = avoid entirely", t.getSupportLevel())
-                             : "Watch support level";
-            riskProfile      = "MODERATE";
-
-        } else if ("BUY".equals(action) && inBuyZone) {
-            signal           = "INVEST_NOW";
-            goodTime         = true;
-            currentSituation = String.format("Price ₹%.2f is in the ideal buy zone (₹%.2f–₹%.2f). "
-                             + "Trend and momentum support entry.", price, entryLow, entryHigh);
-            entryTrigger     = "Already in buy zone — enter now in tranches";
-            keyLevel         = r.getStopLossPrice() != null
-                             ? String.format("₹%.2f (stop-loss) — exit immediately if breached", r.getStopLossPrice())
-                             : "Hard stop-loss level";
-            riskProfile      = "AGGRESSIVE";
-
-        } else if (inBuyZone) {
-            signal           = "WAIT_FOR_DIP";
-            goodTime         = false;
-            currentSituation = String.format("Price ₹%.2f is above the ideal buy zone. "
-                             + "Good stock but not the right entry price yet.", price);
-            entryTrigger     = entryHigh != null
-                             ? String.format("Wait for pullback to ₹%.2f–₹%.2f before entering", entryLow, entryHigh)
-                             : "Wait for pullback to buy zone";
-            keyLevel         = entryLow != null
-                             ? String.format("₹%.2f (bottom of buy zone)", entryLow)
-                             : "Buy zone floor";
-            riskProfile      = "MODERATE";
-
-        } else {
-            signal           = "WAIT_FOR_DIP";
-            goodTime         = false;
-            currentSituation = "Sideways/consolidation. Monitor for a breakout or a dip into the buy zone.";
-            entryTrigger     = entryLow != null
-                             ? String.format("Price dips to ₹%.2f–₹%.2f with RSI below 45", entryLow, entryHigh)
-                             : "Wait for buy zone entry";
-            keyLevel         = entryLow != null
-                             ? String.format("₹%.2f (buy zone floor)", entryLow)
-                             : "Watch buy zone";
-            riskProfile      = "MODERATE";
+        // Timing is a direct projection of the authoritative Marcus decision.
+        // It must never independently upgrade WAIT/HOLD/data states to INVEST_NOW.
+        if ("BUY".equals(action)) {
+            return timingForBuy(t, r);
         }
+        if ("WAIT_FOR_CONFIRMATION".equals(action)) {
+            return EntryTiming.builder().signal("WAIT_FOR_CONFIRMATION").goodTimeToInvest(false)
+                    .currentSituation("Marcus decision is WAIT_FOR_CONFIRMATION. No current entry is authorized.")
+                    .entryTrigger("Wait for the technical confirmation required by the Marcus criteria.")
+                    .keyLevelToWatch(r.getEntryPriceHigh() != null ? String.format("₹%.2f confirmation level", r.getEntryPriceHigh()) : "Confirmation level")
+                    .riskProfile("MODERATE").build();
+        }
+        if ("INSUFFICIENT_DATA".equals(action)) {
+            return EntryTiming.builder().signal("DATA_REQUIRED").goodTimeToInvest(false)
+                    .currentSituation("Marcus decision is INSUFFICIENT_DATA. Mandatory analysis inputs are unavailable.")
+                    .entryTrigger("Wait for complete technical and fundamental data before considering an entry.")
+                    .keyLevelToWatch("Data availability").riskProfile("CONSERVATIVE").build();
+        }
+        if ("HOLD".equals(action)) {
+            return EntryTiming.builder().signal("HOLD").goodTimeToInvest(false)
+                    .currentSituation("Marcus decision is HOLD. No fresh long entry is authorized.")
+                    .entryTrigger("Hold and monitor for a new independently confirmed setup.")
+                    .keyLevelToWatch("New confirmation setup").riskProfile("CONSERVATIVE").build();
+        }
+        return EntryTiming.builder().signal("AVOID").goodTimeToInvest(false)
+                .currentSituation("Marcus decision is " + action + ". A bullish long entry is not authorized.")
+                .entryTrigger("Wait for the decision state to change before considering a long setup.")
+                .keyLevelToWatch("Decision state").riskProfile("CONSERVATIVE").build();
+    }
 
-        return EntryTiming.builder()
-                .signal(signal)
-                .goodTimeToInvest(goodTime)
-                .currentSituation(currentSituation)
-                .entryTrigger(entryTrigger)
-                .keyLevelToWatch(keyLevel)
-                .riskProfile(riskProfile)
-                .build();
+    private EntryTiming timingForBuy(TechnicalSignals t, InvestmentRecommendation r) {
+        Double price = t.getCurrentPrice();
+        Double entryLow = r.getEntryPriceLow();
+        Double entryHigh = r.getEntryPriceHigh();
+        boolean valid = price != null && entryLow != null && entryHigh != null
+                && entryLow < entryHigh && r.getStopLossPrice() != null && r.getStopLossPrice() < entryLow
+                && r.getTargetPrice() != null && r.getTargetPrice() > entryHigh
+                && r.getRiskRewardRatio() != null && r.getRiskRewardRatio() > 0;
+        if (!valid) {
+            return EntryTiming.builder().signal("WAIT_FOR_TRIGGER").goodTimeToInvest(false)
+                    .currentSituation("Marcus decision is BUY, but the derived trade setup is not internally valid; no entry is authorized.")
+                    .entryTrigger("Wait until a valid entry, stop-loss, target and positive R:R are available.")
+                    .keyLevelToWatch("Valid trade setup").riskProfile("CONSERVATIVE").build();
+        }
+        return EntryTiming.builder().signal("INVEST_NOW").goodTimeToInvest(true)
+                .currentSituation(String.format("Marcus decision is BUY and price ₹%.2f is within the authorized entry zone ₹%.2f–₹%.2f.", price, entryLow, entryHigh))
+                .entryTrigger("Actionable now — enter within the authorized zone and respect the hard stop-loss.")
+                .keyLevelToWatch(String.format("₹%.2f stop-loss", r.getStopLossPrice()))
+                .riskProfile("AGGRESSIVE").build();
     }
 
     public StopLossStrategy computeStopLossStrategy(TechnicalSignals t, InvestmentRecommendation r) {
-        if (t == null || r == null || t.getCurrentPrice() == null) {
+        if (t == null || r == null || t.getCurrentPrice() == null || !"BUY".equals(r.getAction())) {
             return StopLossStrategy.builder().build();
         }
 
         double price   = t.getCurrentPrice();
-        double slPrice = r.getStopLossPrice() != null ? r.getStopLossPrice() : price * 0.92;
-        double slPct   = price > 0 ? (slPrice - price) / price * 100 : 0;
+        double entryReference = r.getEntryPriceHigh() != null ? r.getEntryPriceHigh() : price;
+        double slPrice = r.getStopLossPrice() != null ? r.getStopLossPrice() : entryReference * 0.94;
+        if (!(slPrice > 0 && slPrice < entryReference)) return StopLossStrategy.builder().build();
+        double slPct   = entryReference > 0 ? (slPrice - entryReference) / entryReference * 100 : 0;
         String trend   = t.getTrendDirection() != null ? t.getTrendDirection() : "SIDEWAYS";
         Double sma20   = t.getSma20();
         int score      = r.getConfidenceScore();

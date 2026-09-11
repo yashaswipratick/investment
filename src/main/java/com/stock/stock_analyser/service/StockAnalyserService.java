@@ -25,10 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,6 +80,7 @@ public class StockAnalyserService {
     private final OpenAiCommentaryService    openAiService;
     private final StockAnalysisResultPersistenceService analysisResultPersistenceService;
     private final FundamentalAnalysisService fundamentalAnalysisService;
+    private final NseMarketFreshnessService marketFreshnessService;
 
     /**
      * Analyses a stock and returns results for ALL applicable periods in one call.
@@ -112,7 +110,7 @@ public class StockAnalyserService {
 
         return stockHistoryDataService.get(key)
                 .flatMap(stockHistory -> {
-                    LocalDate today        = LocalDate.now();
+                    LocalDate today        = marketFreshnessService.analysisDate();
                     LocalDate requiredFrom = requiredFromDate(lookbackDays);
                     TreeMap<LocalDate, StockHistoryDetails> details = stockHistory.getStockHistoryDetails();
 
@@ -122,31 +120,9 @@ public class StockAnalyserService {
                             && !details.firstKey().isAfter(requiredFrom);
 
                     // ── Check 2: is the DB up-to-date? ────────────────────────
-                    // NSE publishes candle data after market close (~6:30 PM IST).
-                    //
-                    // Logic:
-                    //   Weekday AFTER 6:30 PM IST  → today's data is published; fetch if lastKey < today
-                    //   Weekday BEFORE 6:30 PM IST → yesterday's data is the latest; fetch if lastKey < yesterday
-                    //   Monday (any time)           → Friday is last trading day; fetch if lastKey < Friday
-                    //   Saturday / Sunday           → Friday data is current; fetch if lastKey < Friday
-                    ZonedDateTime istNow     = ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));
-                    DayOfWeek     dow        = istNow.getDayOfWeek();
-                    int           hourIST    = istNow.getHour();
-                    boolean afterMarketClose = hourIST >= 18; // 6 PM IST = data published
-
-                    // Compute the most recent expected trading day
-                    LocalDate expectedLatest;
-                    if (dow == DayOfWeek.SATURDAY) {
-                        expectedLatest = today.minusDays(1); // Friday
-                    } else if (dow == DayOfWeek.SUNDAY) {
-                        expectedLatest = today.minusDays(2); // Friday
-                    } else if (dow == DayOfWeek.MONDAY) {
-                        expectedLatest = today.minusDays(3); // Friday
-                    } else if (afterMarketClose) {
-                        expectedLatest = today;              // Tue–Fri after 6 PM: today is available
-                    } else {
-                        expectedLatest = today.minusDays(1); // Tue–Fri before 6 PM: yesterday is latest
-                    }
+                    // Freshness is determined by the centralized NSE/IST clock,
+                    // configured market-data close time, weekends and holidays.
+                    LocalDate expectedLatest = marketFreshnessService.expectedLatestTradingDate();
 
                     // isRecent = true only if DB has data up to (or beyond) the expected latest trading day
                     boolean isRecent = details != null
@@ -155,7 +131,7 @@ public class StockAnalyserService {
 
                     log.info("Staleness check for {} | lastKey={} | today={} | dayOfWeek={} | afterClose={} | expectedLatest={} | isRecent={}",
                             symbol, details != null && !details.isEmpty() ? details.lastKey() : "N/A",
-                            today, dow, afterMarketClose, expectedLatest, isRecent);
+                            today, expectedLatest, isRecent);
 
                     if (coversHistory && isRecent) {
                         log.info("Cassandra covers full window for {} (earliest: {}, latest: {}). Skipping NSE fetch.",
@@ -275,7 +251,7 @@ public class StockAnalyserService {
     private Mono<StockHistory> autoFetchMissingChunks(String symbol,
                                                       int lookbackDays,
                                                       TreeMap<LocalDate, StockHistoryDetails> existingData) {
-        LocalDate today    = LocalDate.now();
+        LocalDate today    = marketFreshnessService.analysisDate();
         LocalDate fromDate = today.minusDays(Math.round(lookbackDays * CALENDAR_MULTIPLIER));
 
         log.info("Auto-fetching chunked data for {} | lookbackDays={} | calendarFrom={} → {}",
@@ -307,14 +283,15 @@ public class StockAnalyserService {
         if (candles == null || candles.isEmpty()) {
             return Mono.just(StockAnalysisResult.builder()
                     .symbol(symbol).periodLabel(periodLabel)
-                    .analysisDate(LocalDate.now())
-                    .windowStatus("MISSING")
+                    .analysisDate(marketFreshnessService.analysisDate())
+                    .analysisExecutionDate(marketFreshnessService.analysisDate()).marketDataLatestDate(null)
+                    .fundamentalLatestPeriod(null).windowStatus("MISSING")
                     .windowMessage("No candles for period " + periodLabel)
                     .build());
         }
 
         int total          = candles.size();
-        LocalDate today    = LocalDate.now();
+        LocalDate today    = marketFreshnessService.analysisDate();
         // dataFrom / dataTo from the full map so window message makes sense
         LocalDate dataFrom = rawMap != null && !rawMap.isEmpty() ? rawMap.firstKey() : today;
         LocalDate dataTo   = rawMap != null && !rawMap.isEmpty() ? rawMap.lastKey()  : today;
@@ -405,7 +382,7 @@ public class StockAnalyserService {
      */
     private LocalDate requiredFromDate(int tradingDays) {
         long calendarDays = Math.round(tradingDays * CALENDAR_MULTIPLIER);
-        return LocalDate.now().minusDays(calendarDays);
+        return marketFreshnessService.analysisDate().minusDays(calendarDays);
     }
 
     private long daysBetween(LocalDate earlier, LocalDate later) {
@@ -430,7 +407,10 @@ public class StockAnalyserService {
         return StockAnalysisResult.builder()
                 .symbol(symbol)
                 .periodLabel(periodLabel)
-                .analysisDate(LocalDate.now())
+                .analysisDate(marketFreshnessService.analysisDate())
+                .analysisExecutionDate(marketFreshnessService.analysisDate())
+                .marketDataLatestDate(dataTo)
+                .fundamentalLatestPeriod(fundamental != null ? fundamental.getLatestPeriod() : null)
                 .totalDataPoints(total)
                 .dataFrom(dataFrom)
                 .dataTo(dataTo)
