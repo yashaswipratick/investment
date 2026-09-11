@@ -57,6 +57,13 @@ public class OpenAiCommentaryService {
     @Value("${openai.api-key:}")
     private String apiKeyFilePath;
 
+    /**
+     * Master switch for OpenAI usage. When false, the API key is not read or
+     * validated and no OpenAI API calls are made.
+     */
+    @Value("${openai.use-open-api-key:false}")
+    private boolean useOpenApiKey;
+
     @Value("${openai.model-name:gpt-5.5}")
     private String modelName;
 
@@ -179,6 +186,14 @@ public class OpenAiCommentaryService {
 
     @jakarta.annotation.PostConstruct
     public void validateApiKey() {
+        if (!useOpenApiKey) {
+            resolvedApiKey = "";
+            apiKeyValid = false;
+            apiKeyValidationMessage = "DISABLED_BY_CONFIGURATION";
+            log.info("OpenAI API usage is disabled (openai.use-open-api-key=false). API key will not be read or validated.");
+            return;
+        }
+
         resolvedApiKey = loadApiKeyFromFile(apiKeyFilePath);
 
         if (resolvedApiKey.isBlank()) {
@@ -210,6 +225,11 @@ public class OpenAiCommentaryService {
                                            InvestmentRecommendation recommendation,
                                            List<StockHistoryDetails> periodCandles,
                                            boolean isPrimaryPeriod) {
+        if (!useOpenApiKey) {
+            log.info("OpenAI API usage disabled by configuration. Skipping AI commentary for {}", symbol);
+            return Mono.just("");
+        }
+
         if (resolvedApiKey.isBlank() || !apiKeyValid) {
             log.info("OpenAI API key unavailable/invalid. Skipping AI commentary for {}", symbol);
             return Mono.just("");
@@ -304,7 +324,11 @@ public class OpenAiCommentaryService {
     }
 
     public boolean isApiKeyValid() {
-        return apiKeyValid;
+        return useOpenApiKey && apiKeyValid;
+    }
+
+    public boolean isOpenApiKeyUsageEnabled() {
+        return useOpenApiKey;
     }
 
     public String getApiKeyValidationMessage() {

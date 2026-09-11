@@ -158,6 +158,8 @@ public class StockAnalyserController {
                                             m.put("recommendation", objectMapper.readValue(e.getRecommendationJson(), Object.class));
                                         if (e.getTechnicalJson() != null)
                                             m.put("technical", objectMapper.readValue(e.getTechnicalJson(), Object.class));
+                                        if (e.getFundamentalJson() != null)
+                                            m.put("fundamental", objectMapper.readValue(e.getFundamentalJson(), Object.class));
                                         if (e.getProjectionsJson() != null)
                                             m.put("projections", objectMapper.readValue(e.getProjectionsJson(), Object.class));
                                         if (e.getEntryTimingJson() != null)
@@ -332,6 +334,7 @@ public class StockAnalyserController {
     @GetMapping(value = "/openai/key-status", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> openAiKeyStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
+        status.put("useOpenApiKey", openAiCommentaryService.isOpenApiKeyUsageEnabled());
         status.put("keyValid", openAiCommentaryService.isApiKeyValid());
         status.put("validationMessage", openAiCommentaryService.getApiKeyValidationMessage());
         status.put("aiCommentaryEnabled", openAiCommentaryService.isApiKeyValid());

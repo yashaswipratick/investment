@@ -46,6 +46,9 @@ public class StockAnalysisResultEntity {
     @Column("technical_json")
     private String technicalJson;
 
+    @Column("fundamental_json")
+    private String fundamentalJson;
+
     @Column("recommendation_json")
     private String recommendationJson;
 

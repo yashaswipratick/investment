@@ -39,6 +39,7 @@ public class StockAnalysisResult {
     private String windowMessage;
 
     private TechnicalSignals technical;
+    private FundamentalAnalysis fundamental;
     private InvestmentRecommendation recommendation;
 
     /** Period-wise profit projections: 3M, 6M, 9M, 1Y, 2Y, 3Y, 5Y */
