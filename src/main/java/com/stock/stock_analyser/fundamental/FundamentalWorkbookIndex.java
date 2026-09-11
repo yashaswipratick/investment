@@ -28,8 +28,7 @@ public class FundamentalWorkbookIndex {
     public synchronized void refresh() {
         Path directory = configuredDirectory();
         if (directory == null || !Files.isDirectory(directory)) {
-            index = Map.of(); conflicts = Set.of();
-            log.warn("Fundamental workbook directory is unavailable: {}", directory);
+            log.warn("Fundamental workbook directory is unavailable; retaining last known-good index: {}", directory);
             return;
         }
         try (var stream = Files.list(directory)) {
@@ -42,8 +41,7 @@ public class FundamentalWorkbookIndex {
             if (!conflicts.isEmpty()) log.error("Duplicate fundamental workbook symbols detected: {}", conflicts);
             if (!discovery.invalidFiles().isEmpty()) log.warn("Ignored {} invalid/non-canonical fundamental workbook files in {}", discovery.invalidFiles().size(), directory);
         } catch (IOException e) {
-            index = Map.of(); conflicts = Set.of();
-            log.warn("Unable to scan fundamental workbook directory {}: {}", directory, e.getMessage());
+            log.warn("Unable to scan fundamental workbook directory; retaining last known-good index: {}: {}", directory, e.getMessage());
         }
     }
 

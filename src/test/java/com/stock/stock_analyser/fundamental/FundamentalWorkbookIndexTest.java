@@ -54,6 +54,32 @@ class FundamentalWorkbookIndexTest {
         assertTrue(index.find("TRENT").isPresent());
     }
 
+    @Test void unavailableDirectoryRetainsLastKnownGoodSnapshot() throws Exception {
+        Path dir = Files.createTempDirectory("fundamentals-retain-missing");
+        Files.createFile(dir.resolve("TRENT.xlsx"));
+        FundamentalDataConfiguration config = config(dir);
+        FundamentalWorkbookIndex index = new FundamentalWorkbookIndex(config);
+        index.refresh();
+        Path expected = index.find("TRENT").orElseThrow();
+        assertTrue(index.find("TRENT").isPresent());
+        config.setDataDirectory(dir.resolve("missing").toString());
+        index.refresh();
+        assertEquals(expected, index.find("TRENT").orElseThrow());
+        assertEquals(Set.of(), index.conflicts());
+    }
+
+    @Test void failedScanRetainsLastKnownGoodSnapshot() throws Exception {
+        Path dir = Files.createTempDirectory("fundamentals-retain-scan");
+        Files.createFile(dir.resolve("TRENT.xlsx"));
+        FundamentalDataConfiguration config = config(dir);
+        FundamentalWorkbookIndex index = new FundamentalWorkbookIndex(config);
+        index.refresh();
+        assertTrue(index.find("TRENT").isPresent());
+        config.setDataDirectory(dir.resolve("missing").toString());
+        index.refresh();
+        assertTrue(index.find("TRENT").isPresent());
+    }
+
     @Test void nullAndBlankSymbolsAreHandledSafely() throws Exception {
         Path dir = Files.createTempDirectory("fundamentals-symbol");
         FundamentalWorkbookIndex index = new FundamentalWorkbookIndex(config(dir));
