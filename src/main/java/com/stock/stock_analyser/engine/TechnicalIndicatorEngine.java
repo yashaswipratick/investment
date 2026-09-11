@@ -87,8 +87,12 @@ public class TechnicalIndicatorEngine {
         Double sma200 = sma(closes, 200);
         double[] ema12Arr = emaArray(closes, 12);
         double[] ema26Arr = emaArray(closes, 26);
+        double[] ema50Arr = emaArray(closes, 50);
+        double[] ema200Arr = emaArray(closes, 200);
         Double ema12 = ema12Arr[n - 1];
         Double ema26 = ema26Arr[n - 1];
+        Double ema50 = n >= 50 ? ema50Arr[n - 1] : null;
+        Double ema200 = n >= 200 ? ema200Arr[n - 1] : null;
 
         // ─── MACD ────────────────────────────────────────────────────────────
         double[] macdLineArr = new double[n];
@@ -231,6 +235,8 @@ public class TechnicalIndicatorEngine {
                 .sma200(round(sma200))
                 .ema12(round(ema12))
                 .ema26(round(ema26))
+                .ema50(round(ema50))
+                .ema200(round(ema200))
                 .macdLine(round(macdLine))
                 .macdSignal(round(macdSignal))
                 .macdHistogram(round(macdHistogram))

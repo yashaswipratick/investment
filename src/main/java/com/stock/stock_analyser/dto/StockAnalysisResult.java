@@ -39,8 +39,12 @@ public class StockAnalysisResult {
     private String windowMessage;
 
     private TechnicalSignals technical;
+    private TechnicalCriteriaResult technicalCriteriaResult;
     private FundamentalAnalysis fundamental;
+    private FundamentalCriteriaResult fundamentalCriteriaResult;
     private InvestmentRecommendation recommendation;
+    private String marcusDecision;
+    private String decisionReason;
 
     /** Period-wise profit projections: 3M, 6M, 9M, 1Y, 2Y, 3Y, 5Y */
     private java.util.List<PeriodProjection> projections;

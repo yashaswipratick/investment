@@ -1,6 +1,8 @@
 package com.stock.stock_analyser.engine;
 
+import com.stock.stock_analyser.dto.FundamentalCriteriaResult;
 import com.stock.stock_analyser.dto.InvestmentRecommendation;
+import com.stock.stock_analyser.dto.TechnicalCriteriaResult;
 import com.stock.stock_analyser.dto.TechnicalSignals;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -36,6 +38,12 @@ import java.util.List;
 public class InvestmentSignalEngine {
 
     public InvestmentRecommendation recommend(TechnicalSignals t) {
+        return recommend(t, null, null);
+    }
+
+    /** Applies Marcus hard gates after the existing informational score is calculated. */
+    public InvestmentRecommendation recommend(TechnicalSignals t, TechnicalCriteriaResult technicalCriteria,
+                                               FundamentalCriteriaResult fundamentalCriteria) {
         if (t == null || t.getCurrentPrice() == null) {
             return InvestmentRecommendation.builder()
                     .action("NO_DATA")
@@ -217,6 +225,31 @@ public class InvestmentSignalEngine {
         else if (score >= 45) { action = "HOLD";  timeframe = "MEDIUM_TERM"; }
         else if (score >= 25) { action = "SELL";  timeframe = "SHORT_TERM"; }
         else                  { action = "AVOID"; timeframe = "LONG_TERM"; }
+
+        if (technicalCriteria != null && fundamentalCriteria != null) {
+            String technicalStatus = technicalCriteria.getOverallStatus();
+            String fundamentalStatus = fundamentalCriteria.getOverallStatus();
+            if ("PASS".equals(technicalStatus) && "PASS".equals(fundamentalStatus)) {
+                // Generic score remains informational; only a passing hard gate permits BUY.
+                if (!"BUY".equals(action)) action = "HOLD";
+            } else if ("UNAVAILABLE".equals(fundamentalStatus)) {
+                action = "INSUFFICIENT_DATA";
+                timeframe = "MEDIUM_TERM";
+                reasons.add("Marcus BUY blocked: mandatory fundamental data is unavailable.");
+            } else if ("FAIL".equals(fundamentalStatus)) {
+                action = "HOLD";
+                timeframe = "MEDIUM_TERM";
+                reasons.add("Marcus BUY blocked: one or more hard fundamental criteria failed.");
+            } else if ("UNAVAILABLE".equals(technicalStatus)) {
+                action = "INSUFFICIENT_DATA";
+                timeframe = "MEDIUM_TERM";
+                reasons.add("Marcus BUY blocked: mandatory technical data is unavailable.");
+            } else {
+                action = "WAIT_FOR_CONFIRMATION";
+                timeframe = "MEDIUM_TERM";
+                reasons.add("Marcus BUY blocked: technical gate is not currently satisfied.");
+            }
+        }
 
         // ── Entry zone ────────────────────────────────────────────────────────
         // A practical entry zone is a TIGHT band near the current price —

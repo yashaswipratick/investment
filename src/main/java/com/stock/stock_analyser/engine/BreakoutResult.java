@@ -15,6 +15,8 @@ public class BreakoutResult {
     private Double breakoutLevel;
     /** Closing price on the breakout day */
     private Double breakoutPrice;
+    /** Breakout-day volume divided by the preceding 20-day average volume */
+    private Double breakoutVolumeRatio;
     /** How many trading days ago the breakout occurred */
     private Integer daysAgoBreakout;
     /** Did the price come back to test the breakout level? */

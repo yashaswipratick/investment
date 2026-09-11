@@ -25,6 +25,8 @@ public class BreakoutEngine {
 
     private static final int RESISTANCE_LOOKBACK = 20;  // candles to define resistance
     private static final double RETEST_TOLERANCE  = 0.02; // 2% tolerance for retest
+    private static final int ACTIONABLE_BREAKOUT_MAX_DAYS_AGO = 5;
+    private static final double ACTIONABLE_VOLUME_RATIO = 1.5;
 
     public BreakoutResult analyse(List<StockHistoryDetails> candles) {
         if (candles == null || candles.size() < RESISTANCE_LOOKBACK + 5) {
@@ -63,6 +65,7 @@ public class BreakoutEngine {
         }
 
         double breakoutPrice = closes[breakoutBar];
+        Double breakoutVolumeRatio = volumeRatio(candles, breakoutBar);
         int daysAgo = n - 1 - breakoutBar;
 
         // ── Check for retest after the breakout ───────────────────────────────
@@ -94,12 +97,17 @@ public class BreakoutEngine {
         String signal;
         String explanation;
 
-        if (retestConfirmed) {
+        boolean fresh = daysAgo <= ACTIONABLE_BREAKOUT_MAX_DAYS_AGO;
+        boolean volumeConfirmed = breakoutVolumeRatio != null && breakoutVolumeRatio >= ACTIONABLE_VOLUME_RATIO;
+        if (retestConfirmed && fresh && volumeConfirmed) {
             signal = "BULLISH_BREAKOUT_CONFIRMED";
             explanation = String.format(
-                "📈 Breakout confirmed! %d days ago, INFY broke above ₹%.2f (its prior resistance). " +
-                "It then came back to test that level and held — this confirms the breakout is real. " +
-                "This is a strong buy signal — the old resistance has become new support.",
+                "📈 Current breakout confirmed %d day(s) ago above ₹%.2f with %.1fx breakout volume and a successful retest.",
+                daysAgo, breakoutLevel, breakoutVolumeRatio);
+        } else if (retestConfirmed) {
+            signal = "HISTORICAL_BREAKOUT_CONFIRMED";
+            explanation = String.format(
+                "Historical breakout occurred %d day(s) ago at ₹%.2f. It is context only and is not a current entry signal.",
                 daysAgo, breakoutLevel);
         } else if (retested) {
             signal = "BREAKOUT_RETEST_IN_PROGRESS";
@@ -108,13 +116,18 @@ public class BreakoutEngine {
                 "that level. Watch closely — if it bounces here, the breakout is confirmed. " +
                 "If it falls below, the breakout has failed.",
                 daysAgo, breakoutLevel);
-        } else {
+        } else if (fresh && volumeConfirmed) {
             signal = "FRESH_BREAKOUT";
             explanation = String.format(
-                "🚀 Fresh breakout! %d trading day(s) ago the stock broke above ₹%.2f " +
-                "(a key resistance level). No retest yet — common to see a pullback to ₹%.2f " +
-                "before the next leg up. Wait for a retest and hold to confirm the move.",
-                daysAgo, breakoutLevel, breakoutLevel);
+                "🚀 Fresh breakout! %d trading day(s) ago the stock broke above ₹%.2f with %.1fx volume. " +
+                "Current technical alignment is still required before treating it as actionable.",
+                daysAgo, breakoutLevel, breakoutVolumeRatio);
+        } else {
+            signal = fresh ? "FRESH_BREAKOUT_UNCONFIRMED_VOLUME" : "HISTORICAL_BREAKOUT";
+            explanation = String.format(
+                "Breakout detected %d trading day(s) ago at ₹%.2f, but it is not a confirmed current entry signal. " +
+                "Historical events are informational until current price, volume and technical conditions align.",
+                daysAgo, breakoutLevel);
         }
 
         return BreakoutResult.builder()
@@ -122,6 +135,7 @@ public class BreakoutEngine {
                 .breakoutDate(breakoutDate)
                 .breakoutLevel(round(breakoutLevel))
                 .breakoutPrice(round(breakoutPrice))
+                .breakoutVolumeRatio(round(breakoutVolumeRatio))
                 .daysAgoBreakout(daysAgo)
                 .retested(retested)
                 .retestConfirmed(retestConfirmed)
@@ -151,5 +165,25 @@ public class BreakoutEngine {
     }
 
     private double safe(Double v)  { return v != null ? v : 0; }
+    private Double volumeRatio(List<StockHistoryDetails> candles, int index) {
+        if (index < RESISTANCE_LOOKBACK) return null;
+        double sum = 0;
+        int count = 0;
+        for (int i = index - RESISTANCE_LOOKBACK; i < index; i++) {
+            Double v = parseVolume(candles.get(i).getVolume());
+            if (v != null && v > 0) { sum += v; count++; }
+        }
+        Double breakoutVolume = parseVolume(candles.get(index).getVolume());
+        if (count == 0 || breakoutVolume == null || breakoutVolume <= 0) return null;
+        return breakoutVolume / (sum / count);
+    }
+
+    private Double parseVolume(String value) {
+        if (value == null || value.isBlank()) return null;
+        try { return Double.parseDouble(value.replace(",", "").trim()); }
+        catch (NumberFormatException e) { return null; }
+    }
+
     private double round(double v) { return Math.round(v * 100.0) / 100.0; }
+    private Double round(Double v) { return v == null || !Double.isFinite(v) ? null : round(v.doubleValue()); }
 }

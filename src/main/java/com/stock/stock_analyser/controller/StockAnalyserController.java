@@ -160,6 +160,12 @@ public class StockAnalyserController {
                                             m.put("technical", objectMapper.readValue(e.getTechnicalJson(), Object.class));
                                         if (e.getFundamentalJson() != null)
                                             m.put("fundamental", objectMapper.readValue(e.getFundamentalJson(), Object.class));
+                                        if (e.getTechnicalCriteriaJson() != null && !e.getTechnicalCriteriaJson().isBlank())
+                                            m.put("technicalCriteriaResult", objectMapper.readValue(e.getTechnicalCriteriaJson(), Object.class));
+                                        if (e.getFundamentalCriteriaJson() != null && !e.getFundamentalCriteriaJson().isBlank())
+                                            m.put("fundamentalCriteriaResult", objectMapper.readValue(e.getFundamentalCriteriaJson(), Object.class));
+                                        m.put("marcusDecision", e.getMarcusDecision());
+                                        m.put("decisionReason", e.getDecisionReason());
                                         if (e.getProjectionsJson() != null)
                                             m.put("projections", objectMapper.readValue(e.getProjectionsJson(), Object.class));
                                         if (e.getEntryTimingJson() != null)
@@ -233,6 +239,14 @@ public class StockAnalyserController {
                             row.put("upsidePct",        rec.getPotentialUpsidePct());
                             row.put("riskReward",       rec.getRiskRewardRatio());
                             row.put("timeframe",        rec.getTimeframe());
+                        }
+                        row.put("marcusDecision", entity.getMarcusDecision());
+                        row.put("decisionReason", entity.getDecisionReason());
+                        if (entity.getFundamentalCriteriaJson() != null && !entity.getFundamentalCriteriaJson().isBlank()) {
+                            row.put("fundamentalCriteriaResult", objectMapper.readValue(entity.getFundamentalCriteriaJson(), Object.class));
+                        }
+                        if (entity.getTechnicalCriteriaJson() != null && !entity.getTechnicalCriteriaJson().isBlank()) {
+                            row.put("technicalCriteriaResult", objectMapper.readValue(entity.getTechnicalCriteriaJson(), Object.class));
                         }
                         if (entity.getTechnicalJson() != null && !entity.getTechnicalJson().isBlank()) {
                             TechnicalSignals tech = objectMapper.readValue(

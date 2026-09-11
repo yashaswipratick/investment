@@ -23,6 +23,8 @@ public class TechnicalSignals {
     private Double sma20;         // Simple Moving Average 20-day
     private Double sma50;         // Simple Moving Average 50-day
     private Double sma200;        // Simple Moving Average 200-day
+    private Double ema50;         // Exponential Moving Average 50-day
+    private Double ema200;        // Exponential Moving Average 200-day
     private Double ema12;         // Exponential Moving Average 12-day
     private Double ema26;         // Exponential Moving Average 26-day
 

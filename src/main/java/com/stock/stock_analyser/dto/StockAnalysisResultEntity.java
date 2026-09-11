@@ -49,6 +49,18 @@ public class StockAnalysisResultEntity {
     @Column("fundamental_json")
     private String fundamentalJson;
 
+    @Column("technical_criteria_json")
+    private String technicalCriteriaJson;
+
+    @Column("fundamental_criteria_json")
+    private String fundamentalCriteriaJson;
+
+    @Column("marcus_decision")
+    private String marcusDecision;
+
+    @Column("decision_reason")
+    private String decisionReason;
+
     @Column("recommendation_json")
     private String recommendationJson;
 

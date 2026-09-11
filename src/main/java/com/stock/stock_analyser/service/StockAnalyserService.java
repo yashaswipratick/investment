@@ -8,13 +8,17 @@ import com.stock.service.StockHistoryDataService;
 import com.stock.stock_analyser.dto.InvestmentRecommendation;
 import com.stock.stock_analyser.dto.StockAnalysisRequest;
 import com.stock.stock_analyser.dto.StockAnalysisResult;
+import com.stock.stock_analyser.dto.TechnicalCriteriaResult;
 import com.stock.stock_analyser.dto.TechnicalSignals;
 import com.stock.stock_analyser.dto.EntryTiming;
 import com.stock.stock_analyser.dto.FundamentalAnalysis;
+import com.stock.stock_analyser.dto.FundamentalCriteriaResult;
 import com.stock.stock_analyser.dto.PeriodProjection;
 import com.stock.stock_analyser.dto.StopLossStrategy;
+import com.stock.stock_analyser.engine.FundamentalCriteriaEngine;
 import com.stock.stock_analyser.engine.InvestmentSignalEngine;
 import com.stock.stock_analyser.engine.ProjectionEngine;
+import com.stock.stock_analyser.engine.TechnicalCriteriaEngine;
 import com.stock.stock_analyser.engine.TechnicalIndicatorEngine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -73,6 +77,8 @@ public class StockAnalyserService {
     private final StockHistoryDataIntegrator stockHistoryDataIntegrator;
     private final TechnicalIndicatorEngine   technicalEngine;
     private final InvestmentSignalEngine     signalEngine;
+    private final TechnicalCriteriaEngine    technicalCriteriaEngine;
+    private final FundamentalCriteriaEngine  fundamentalCriteriaEngine;
     private final ProjectionEngine           projectionEngine;
     private final OpenAiCommentaryService    openAiService;
     private final StockAnalysisResultPersistenceService analysisResultPersistenceService;
@@ -345,11 +351,15 @@ public class StockAnalyserService {
 
         log.info("[{}][{}] Analysing {} candles | windowStatus={}", symbol, periodLabel, total, windowStatus);
 
-        TechnicalSignals technical         = technicalEngine.compute(candles, tradingBars);
+        TechnicalSignals technical = technicalEngine.compute(candles, tradingBars);
         FundamentalAnalysis fundamental = fundamentalAnalysisService.analyse(symbol);
-        InvestmentRecommendation recommendation = signalEngine.recommend(technical);
+        TechnicalCriteriaResult technicalCriteria = technicalCriteriaEngine.evaluate(technical);
+        FundamentalCriteriaResult fundamentalCriteria = fundamentalCriteriaEngine.evaluate(fundamental);
+        InvestmentRecommendation recommendation = signalEngine.recommend(technical, technicalCriteria, fundamentalCriteria);
+        String marcusDecision = recommendation.getAction();
+        String decisionReason = decisionReason(technicalCriteria, fundamentalCriteria, marcusDecision);
 
-        // ── New: projections, entry timing, stop-loss strategy ───────────────
+        // ── Existing projections, entry timing, stop-loss strategy ───────────
         java.util.List<PeriodProjection> projections = projectionEngine.computeProjections(technical, recommendation);
         EntryTiming     entryTiming      = projectionEngine.computeEntryTiming(technical, recommendation);
         StopLossStrategy stopLossStrategy = projectionEngine.computeStopLossStrategy(technical, recommendation);
@@ -358,8 +368,9 @@ public class StockAnalyserService {
 
         if (!includeAi) {
             return Mono.just(buildResult(symbol, periodLabel, total, dataFrom, dataTo,
-                    requiredRecommended, windowStatus, windowMessage, technical, fundamental, recommendation,
-                    projections, entryTiming, stopLossStrategy, dataNote));
+                    requiredRecommended, windowStatus, windowMessage, technical, technicalCriteria, fundamental,
+                    fundamentalCriteria, recommendation, marcusDecision, decisionReason, projections, entryTiming,
+                    stopLossStrategy, dataNote));
         }
 
         // Primary period: full commentary with web search (live fundamentals, news, analyst data)
@@ -372,8 +383,9 @@ public class StockAnalyserService {
                 .map(commentary -> {
                     recommendation.setAiCommentary(commentary);
                     return buildResult(symbol, periodLabel, total, dataFrom, dataTo,
-                            requiredRecommended, windowStatus, windowMessage, technical, fundamental, recommendation,
-                            projections, entryTiming, stopLossStrategy, dataNote);
+                            requiredRecommended, windowStatus, windowMessage, technical, technicalCriteria, fundamental,
+                            fundamentalCriteria, recommendation, marcusDecision, decisionReason, projections, entryTiming,
+                            stopLossStrategy, dataNote);
                 });
     }
 
@@ -405,8 +417,12 @@ public class StockAnalyserService {
                                             LocalDate requiredFrom,
                                             String windowStatus, String windowMessage,
                                             TechnicalSignals technical,
+                                            TechnicalCriteriaResult technicalCriteria,
                                             FundamentalAnalysis fundamental,
+                                            FundamentalCriteriaResult fundamentalCriteria,
                                             InvestmentRecommendation recommendation,
+                                            String marcusDecision,
+                                            String decisionReason,
                                             java.util.List<PeriodProjection> projections,
                                             EntryTiming entryTiming,
                                             StopLossStrategy stopLossStrategy,
@@ -422,13 +438,25 @@ public class StockAnalyserService {
                 .windowStatus(windowStatus)
                 .windowMessage(windowMessage)
                 .technical(technical)
+                .technicalCriteriaResult(technicalCriteria)
                 .fundamental(fundamental)
+                .fundamentalCriteriaResult(fundamentalCriteria)
                 .recommendation(recommendation)
+                .marcusDecision(marcusDecision)
+                .decisionReason(decisionReason)
                 .projections(projections)
                 .entryTiming(entryTiming)
                 .stopLossStrategy(stopLossStrategy)
                 .dataNote(dataNote)
                 .build();
+    }
+
+    private String decisionReason(TechnicalCriteriaResult technical, FundamentalCriteriaResult fundamental, String decision) {
+        if ("BUY".equals(decision)) return "Technical and fundamental Marcus hard criteria both PASS.";
+        if (fundamental == null || "UNAVAILABLE".equals(fundamental.getOverallStatus())) return "BUY blocked: mandatory fundamental data is unavailable.";
+        if ("FAIL".equals(fundamental.getOverallStatus())) return "BUY blocked: one or more mandatory fundamental criteria failed.";
+        if (technical == null || "UNAVAILABLE".equals(technical.getOverallStatus())) return "BUY blocked: mandatory technical data is unavailable.";
+        return "BUY blocked: technical criteria are not currently satisfied.";
     }
 
     private String buildDataNote(int total, LocalDate from, LocalDate to) {
